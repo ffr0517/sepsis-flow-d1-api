@@ -46,6 +46,11 @@ parse_levels <- function(levels, available) {
   levels
 }
 
+required_input_fields <- c(
+  "age.months", "sex", "adm.recent", "wfaz", "cidysymp",
+  "not.alert", "hr.all", "rr.all", "envhtemp", "crt.long", "oxy.ra"
+)
+
 predict_ensemble_summary <- function(new_data, ensemble_bundle, vote_threshold = 0.5) {
   pmat <- predict_ensemble_all_heads(new_data, ensemble_bundle)
 
@@ -123,6 +128,18 @@ function(req, res, vote_threshold = NULL, format = "long") {
   if (inherits(df, "error")) {
     res$status <- 400
     return(list(error = df$message))
+  }
+
+  missing_fields <- setdiff(required_input_fields, names(df))
+  if (length(missing_fields) > 0) {
+    res$status <- 400
+    return(list(
+      error = paste0(
+        "Missing required fields: ",
+        paste(missing_fields, collapse = ", ")
+      ),
+      required_fields = required_input_fields
+    ))
   }
 
   format <- tolower(as.character(format %||% "long"))

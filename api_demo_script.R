@@ -67,34 +67,19 @@ wait_for_api <- function(base_url, max_wait_s = 120, poll_interval_s = 3) {
   }
 }
 
-# Example patient row. Keep names aligned with training features used by bundle_day1.
+# Example patient row using only required API input fields.
 example_patient <- list(
   age.months = 24,
   sex = 0,
-  bgcombyn = 0,
   adm.recent = 0,
   wfaz = -1.1,
-  waste = 0,
-  stunt = 0,
   cidysymp = 2,
-  prior.care = 0,
-  travel.time.bin = 0,
-  diarrhoeal = 0,
-  pneumo = 0,
-  sev.pneumo = 0,
-  ensapro = 0,
-  vomit.all = 0,
-  seiz = 0,
-  pfacleth = 0,
   not.alert = 0,
-  danger.sign = 0,
   hr.all = 120,
   rr.all = 28,
   oxy.ra = 98,
   envhtemp = 37.8,
-  crt.long = 0,
-  parenteral_screen = 0,
-  SIRS_num = 1
+  crt.long = 0
 )
 
 cat("Base URL:", BASE_URL, "\n")
@@ -117,7 +102,7 @@ print(single_out)
 cat("\nMulti-row prediction (format=wide, custom vote_threshold):\n")
 multi_rows <- list(
   example_patient,
-  modifyList(example_patient, list(hr.all = 140, rr.all = 34, not.alert = 1, danger.sign = 1))
+  modifyList(example_patient, list(hr.all = 140, rr.all = 34, not.alert = 1))
 )
 
 multi_out <- post_json(
