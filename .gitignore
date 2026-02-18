@@ -1,7 +1,4 @@
 .DS_Store
-privacy_policy.md
-README.md
-sepsis-flow-api.yaml
 node_modules
 .Rproj.user
 .Rhistory
