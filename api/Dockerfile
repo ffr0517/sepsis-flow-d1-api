@@ -6,11 +6,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     libxml2-dev \
     libicu-dev \
+    libsodium-dev \
     zlib1g-dev \
     pkg-config \
     make \
     g++ \
-    && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/*
 
 RUN R -q -e "install.packages(c('plumber','jsonlite'), repos='https://cloud.r-project.org', Ncpus=parallel::detectCores()); stopifnot(requireNamespace('plumber', quietly=TRUE), requireNamespace('jsonlite', quietly=TRUE))"
 
