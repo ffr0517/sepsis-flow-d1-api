@@ -6,22 +6,40 @@ predict_ensemble_all_heads <- function(new_data, ensemble_bundle) {
     n <- nrow(new_data)
     out <- matrix(NA_real_, nrow = n, ncol = 0)
 
+    collect_head_probs <- function(models, predict_fn, n_expected) {
+        if (length(models) == 0) {
+            return(matrix(numeric(0), nrow = n_expected, ncol = 0))
+        }
+
+        probs <- lapply(models, predict_fn)
+        lens <- vapply(probs, length, integer(1))
+        if (any(lens != n_expected)) {
+            stop("Head prediction length mismatch. Expected ", n_expected, " rows.")
+        }
+
+        mat <- do.call(cbind, probs)
+        if (is.null(dim(mat))) {
+            mat <- matrix(mat, nrow = n_expected, ncol = length(models))
+        }
+        mat
+    }
+
     # Type 1 heads
-    p1 <- sapply(b1$models, function(m) {
+    p1 <- collect_head_probs(b1$models, function(m) {
         predict_type1_manual(new_data = new_data, preprocess = b1$preprocess, model_minimal = m)
-    })
+    }, n_expected = n)
     out <- cbind(out, p1)
 
     # Type 2 heads
-    p2 <- sapply(b2$models, function(m) {
+    p2 <- collect_head_probs(b2$models, function(m) {
         predict_type2_manual(new_data = new_data, preprocess = b2$preprocess, model_minimal = m)
-    })
+    }, n_expected = n)
     out <- cbind(out, p2)
 
     # Type 3 heads
-    p3 <- sapply(b3$models, function(m) {
+    p3 <- collect_head_probs(b3$models, function(m) {
         predict_type3_manual(new_data = new_data, preprocess = b3$preprocess, model_minimal = m)
-    })
+    }, n_expected = n)
     out <- cbind(out, p3)
 
     colnames(out) <- c(

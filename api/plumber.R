@@ -5,7 +5,31 @@ suppressPackageStartupMessages({
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
-api_dir <- normalizePath(dirname(sys.frame(1)$ofile %||% "api/plumber.R"), winslash = "/", mustWork = FALSE)
+find_api_dir <- function() {
+  script_ofile <- tryCatch(sys.frame(1)$ofile, error = function(e) NULL)
+  candidates <- unique(c(
+    if (!is.null(script_ofile)) dirname(script_ofile) else NULL,
+    "api",
+    ".",
+    "/app"
+  ))
+  candidates <- normalizePath(candidates, winslash = "/", mustWork = FALSE)
+
+  for (dir in candidates) {
+    has_model <- file.exists(file.path(dir, "models", "day1_bundle.rds"))
+    has_predict <- file.exists(file.path(dir, "R", "predict.r"))
+    if (isTRUE(has_model) && isTRUE(has_predict)) {
+      return(dir)
+    }
+  }
+
+  stop(
+    "Could not locate API directory containing models/day1_bundle.rds and R/predict.r. Searched: ",
+    paste(candidates, collapse = ", ")
+  )
+}
+
+api_dir <- find_api_dir()
 model_path <- file.path(api_dir, "models", "day1_bundle.rds")
 
 if (!file.exists(model_path)) {
