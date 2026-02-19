@@ -143,7 +143,7 @@ function(res) {
 #* @post /flow/day1
 #* @param format:string Optional. "long" or "wide" (default "long")
 #* @param vote_threshold:double Optional. Threshold passed to Day 1 API.
-#* @body raw JSON payload containing Day 1 baseline fields, optionally nested in data.
+#* @body raw JSON payload containing Day 1 baseline fields (optionally nested in data) and optional prevalence strata via `country`, `inpatient_status`, or nested `strata`.
 #* @serializer json list(auto_unbox = TRUE, digits = 10)
 function(req, res, format = "long", vote_threshold = NULL) {
   started <- Sys.time()
@@ -160,6 +160,7 @@ function(req, res, format = "long", vote_threshold = NULL) {
   }
 
   baseline_input <- extract_baseline_input(payload)
+  strata <- extract_optional_strata(payload)
   missing <- validate_required_fields(baseline_input, baseline_fields)
   if (length(missing) > 0) {
     res$status <- 400
@@ -177,7 +178,12 @@ function(req, res, format = "long", vote_threshold = NULL) {
     format = format %||% "long",
     vote_threshold = vote_threshold
   )
-  day1_body <- list(data = baseline_input, levels = levels_day1)
+  day1_body <- list(
+    data = baseline_input,
+    levels = levels_day1,
+    country = strata$country,
+    inpatient_status = strata$inpatient_status
+  )
   day1_body <- day1_body[!vapply(day1_body, is.null, logical(1))]
 
   day1_warm <- wait_for_downstream_ready(
@@ -242,7 +248,11 @@ function(req, res, format = "long", vote_threshold = NULL) {
   out <- list(
     day1_result = day1_resp$body,
     day2_prefill = derived$prefill,
-    baseline_inputs = baseline_input
+    baseline_inputs = baseline_input,
+    strata = if (isTRUE(strata$has_any)) list(
+      country = strata$country,
+      inpatient_status = strata$inpatient_status
+    ) else NULL
   )
 
   envelope_ok(
@@ -256,7 +266,7 @@ function(req, res, format = "long", vote_threshold = NULL) {
 #* @post /flow/day2
 #* @param format:string Optional. "long" or "wide" (default "long")
 #* @param vote_threshold:double Optional. Threshold passed to Day 2 API.
-#* @body raw JSON payload with baseline_inputs and day2_prefill, or a complete data object.
+#* @body raw JSON payload with baseline_inputs and day2_prefill, or a complete data object, plus optional prevalence strata via `country`, `inpatient_status`, or nested `strata`.
 #* @serializer json list(auto_unbox = TRUE, digits = 10)
 function(req, res, format = "long", vote_threshold = NULL) {
   started <- Sys.time()
@@ -273,6 +283,7 @@ function(req, res, format = "long", vote_threshold = NULL) {
   }
 
   levels_day2 <- payload$levels_day2 %||% payload$levels %||% NULL
+  strata <- extract_optional_strata(payload)
 
   has_full_data <- is.list(payload$data) && !is.null(names(payload$data))
   if (isTRUE(has_full_data)) {
@@ -302,7 +313,12 @@ function(req, res, format = "long", vote_threshold = NULL) {
     format = format %||% "long",
     vote_threshold = vote_threshold
   )
-  day2_body <- list(data = day2_input, levels = levels_day2)
+  day2_body <- list(
+    data = day2_input,
+    levels = levels_day2,
+    country = strata$country,
+    inpatient_status = strata$inpatient_status
+  )
   day2_body <- day2_body[!vapply(day2_body, is.null, logical(1))]
 
   day2_warm <- wait_for_downstream_ready(
@@ -355,7 +371,11 @@ function(req, res, format = "long", vote_threshold = NULL) {
 
   out <- list(
     day2_result = day2_resp$body,
-    final_day2_input_used = day2_input
+    final_day2_input_used = day2_input,
+    strata = if (isTRUE(strata$has_any)) list(
+      country = strata$country,
+      inpatient_status = strata$inpatient_status
+    ) else NULL
   )
 
   envelope_ok(

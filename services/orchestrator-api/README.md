@@ -37,11 +37,13 @@ It returns a consistent response envelope:
 
 - `POST /flow/day1`
   - Accepts Day 1 baseline fields.
-  - Returns `day1_result`, `day2_prefill`, and echoed `baseline_inputs`.
+  - Optional prevalence strata can be supplied via top-level `country` / `inpatient_status` or nested `strata`.
+  - Returns `day1_result`, `day2_prefill`, echoed `baseline_inputs`, and echoed `strata` (when provided).
 
 - `POST /flow/day2`
   - Accepts `baseline_inputs` + `day2_prefill` or a complete `data` object.
-  - Returns `day2_result` and `final_day2_input_used`.
+  - Optional prevalence strata can be supplied via top-level `country` / `inpatient_status` or nested `strata`.
+  - Returns `day2_result`, `final_day2_input_used`, and echoed `strata` (when provided).
 
 ## Local Run
 

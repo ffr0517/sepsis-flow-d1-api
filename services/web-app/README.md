@@ -5,12 +5,18 @@ Static two-step frontend for the Day 1 -> Day 2 workflow.
 ## Features
 
 - Day 1 required input form.
+- Optional collapsible prevalence-adjustment inputs:
+  - `country` (`Bangladesh`, `Cambodia`, `Indonesia`, `Laos`, `Vietnam`)
+  - `inpatient_status` (`Inpatient` / `Outpatient`)
+  - If left unset, standard 50/50 (non-adjusted) output is used.
 - Calls orchestrator `POST /flow/day1`.
-- Displays Day 1 treatment predictions, including `mean_predicted_probability`.
+- Displays Day 1 treatment predictions, including:
+  - `mean_predicted_probability`
+  - and, when available, prevalence-adjusted fields (`p_adj`, `t_adj`, prevalence metadata)
 - Prefills editable Day 2 carry-forward fields:
   - `LEVEL1_TREATMENTS_D1_SAFE_0` ... `LEVEL5_TREATMENTS_D1_SAFE_0`
 - Calls orchestrator `POST /flow/day2`.
-- Displays Day 2 treatment predictions, including `mean_predicted_probability`.
+- Displays Day 2 treatment predictions with the same conditional adjusted fields as Day 1.
 - Exports combined flow results + trace metadata as JSON.
 
 ## Local Run

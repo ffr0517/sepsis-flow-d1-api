@@ -122,6 +122,29 @@ code {
   grid-template-columns: repeat(1, minmax(0, 1fr));
 }
 
+.prior-form {
+  margin-top: 10px;
+}
+
+.collapsible-panel {
+  border: 1px solid #d4e5e2;
+  border-radius: 12px;
+  background: #f8fcfb;
+  padding: 10px 12px 12px;
+  margin-bottom: 14px;
+}
+
+.collapsible-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--primary-strong);
+  user-select: none;
+}
+
+.collapsible-panel[open] summary {
+  margin-bottom: 6px;
+}
+
 .field {
   display: grid;
 }

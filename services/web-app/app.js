@@ -59,6 +59,7 @@ const state = {
   day2Prefill: null,
   day1Response: null,
   day2Response: null,
+  priorAdjustments: null,
   startupReady: false,
   startupWarming: false,
   loading: {
@@ -194,16 +195,46 @@ function collectDay2Prefill() {
   return out;
 }
 
+function collectOptionalStrata() {
+  const country = (byId("priorCountry")?.value || "").trim();
+  const inpatientStatus = (byId("priorInpatientStatus")?.value || "").trim();
+  const strata = {};
+  if (country) strata.country = country;
+  if (inpatientStatus) strata.inpatient_status = inpatientStatus;
+  return strata;
+}
+
+function withOptionalStrata(payload, strata) {
+  if (!strata || Object.keys(strata).length === 0) return payload;
+  return { ...payload, strata };
+}
+
+function strataSummaryText(strata) {
+  if (!strata || Object.keys(strata).length === 0) return "standard 50/50 priors";
+  const country = strata.country ? `country=${strata.country}` : null;
+  const inpatient = strata.inpatient_status ? `inpatient_status=${strata.inpatient_status}` : null;
+  return [country, inpatient].filter(Boolean).join(", ");
+}
+
 function asPercent(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return "";
   return (num * 100).toFixed(2);
 }
 
+function hasValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== "";
+}
+
 function formatPredictionRow(row) {
   return {
     treatment: row.level ?? "",
     avgPredictedProbabilityPct: asPercent(row.mean_predicted_probability),
+    adjustedPredictedProbabilityPct: asPercent(row.p_adj),
+    adjustedThresholdPct: asPercent(row.t_adj),
+    prevalencePct: asPercent(row.prevalence),
+    prevalenceScope: row.prevalence_scope ?? "",
+    prevalenceStratum: row.prevalence_stratum ?? "",
     votersExceedingThreshold: row.votes_exceeding_threshold ?? "",
     votesAboveThresholdPct: asPercent(row.votes_above_threshold),
     overallTreatmentPrediction: row.predicted_treatment_by_majority_vote ? "Yes" : "No"
@@ -213,9 +244,21 @@ function formatPredictionRow(row) {
 function tableFromRows(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return "<p class='hint'>No rows returned.</p>";
   const formatted = rows.map(formatPredictionRow);
+  const showAdjusted = formatted.some((row) =>
+    hasValue(row.adjustedPredictedProbabilityPct) ||
+    hasValue(row.adjustedThresholdPct) ||
+    hasValue(row.prevalencePct)
+  );
+  const showStrata = formatted.some((row) => hasValue(row.prevalenceScope) || hasValue(row.prevalenceStratum));
+
   const header = `
     <th>Treatment</th>
     <th>Averaged Predicted Probability (%)</th>
+    ${showAdjusted ? "<th>Prevalence-Adjusted Probability (%)</th>" : ""}
+    ${showAdjusted ? "<th>Adjusted Threshold (%)</th>" : ""}
+    ${showAdjusted ? "<th>Stratum Prevalence (%)</th>" : ""}
+    ${showStrata ? "<th>Prevalence Scope</th>" : ""}
+    ${showStrata ? "<th>Prevalence Stratum</th>" : ""}
     <th>Voters Exceeding Threshold</th>
     <th>Votes Above Threshold (%)</th>
     <th>Overall Treatment Prediction</th>
@@ -226,6 +269,11 @@ function tableFromRows(rows) {
         <tr>
           <td>${row.treatment}</td>
           <td>${row.avgPredictedProbabilityPct}</td>
+          ${showAdjusted ? `<td>${row.adjustedPredictedProbabilityPct}</td>` : ""}
+          ${showAdjusted ? `<td>${row.adjustedThresholdPct}</td>` : ""}
+          ${showAdjusted ? `<td>${row.prevalencePct}</td>` : ""}
+          ${showStrata ? `<td>${row.prevalenceScope}</td>` : ""}
+          ${showStrata ? `<td>${row.prevalenceStratum}</td>` : ""}
           <td>${row.votersExceedingThreshold}</td>
           <td>${row.votesAboveThresholdPct}</td>
           <td>${row.overallTreatmentPrediction}</td>
@@ -245,10 +293,20 @@ function tableFromRows(rows) {
 function summaryCardsFromRows(rows) {
   const cards = rows
     .map((row) => {
+      const adjustedLines = hasValue(row.adjustedPredictedProbabilityPct)
+        ? `
+          <p><strong>Prevalence-Adjusted Probability:</strong> ${row.adjustedPredictedProbabilityPct}%</p>
+          <p><strong>Adjusted Threshold:</strong> ${row.adjustedThresholdPct}%</p>
+          <p><strong>Stratum Prevalence:</strong> ${row.prevalencePct}%</p>
+          <p><strong>Prevalence Scope:</strong> ${row.prevalenceScope || "-"}</p>
+          <p><strong>Prevalence Stratum:</strong> ${row.prevalenceStratum || "-"}</p>
+        `
+        : "";
       return `
         <article class="summary-card">
           <h3>${row.treatment || "Treatment"}</h3>
           <p><strong>Averaged Predicted Probability:</strong> ${row.avgPredictedProbabilityPct}%</p>
+          ${adjustedLines}
           <p><strong>Voters Exceeding Threshold:</strong> ${row.votersExceedingThreshold}</p>
           <p><strong>Votes Above Threshold:</strong> ${row.votesAboveThresholdPct}%</p>
           <p><strong>Overall Treatment Prediction:</strong> ${row.overallTreatmentPrediction}</p>
@@ -296,6 +354,11 @@ function buildCsvRows() {
     "Day",
     "Treatment",
     "Averaged Predicted Probability (%)",
+    "Prevalence-Adjusted Probability (%)",
+    "Adjusted Threshold (%)",
+    "Stratum Prevalence (%)",
+    "Prevalence Scope",
+    "Prevalence Stratum",
     "Voters Exceeding Threshold",
     "Votes Above Threshold (%)",
     "Overall Treatment Prediction"
@@ -310,6 +373,11 @@ function buildCsvRows() {
       row.day,
       row.treatment,
       row.avgPredictedProbabilityPct,
+      row.adjustedPredictedProbabilityPct,
+      row.adjustedThresholdPct,
+      row.prevalencePct,
+      row.prevalenceScope,
+      row.prevalenceStratum,
       row.votersExceedingThreshold,
       row.votesAboveThresholdPct,
       row.overallTreatmentPrediction
@@ -337,9 +405,14 @@ async function handleRunDay1() {
     if (!state.startupReady) throw new Error("Startup check is still running. Wait for APIs to be ready.");
     setLoading("day1", true);
     const baselineInputs = collectBaselineInputs();
-    const envelope = await postJson(`${ORCHESTRATOR_API_BASE_URL}/flow/day1?format=long`, { data: baselineInputs });
+    const priorAdjustments = collectOptionalStrata();
+    const envelope = await postJson(
+      `${ORCHESTRATOR_API_BASE_URL}/flow/day1?format=long`,
+      withOptionalStrata({ data: baselineInputs }, priorAdjustments)
+    );
 
     state.baselineInputs = envelope?.data?.baseline_inputs || baselineInputs;
+    state.priorAdjustments = priorAdjustments;
     state.day2Prefill = envelope?.data?.day2_prefill || {};
     state.day1Response = envelope;
     state.day2Response = null;
@@ -349,7 +422,7 @@ async function handleRunDay1() {
     showCard("day2EditCard");
     byId("day2ResultsCard").classList.add("hidden");
     byId("exportCard").classList.add("hidden");
-    setStatus("success", "Success: Day 1 treatment predictions completed.");
+    setStatus("success", `Success: Day 1 treatment predictions completed (${strataSummaryText(priorAdjustments)}).`);
   } catch (err) {
     setStatus("error", `Failed: ${err.message}`);
   } finally {
@@ -363,18 +436,23 @@ async function handleRunDay2() {
     setLoading("day2", true);
     if (!state.baselineInputs) throw new Error("Run Day 1 first to generate baseline and Day 2 prefill.");
     const day2Prefill = collectDay2Prefill();
+    const priorAdjustments = collectOptionalStrata();
 
-    const envelope = await postJson(`${ORCHESTRATOR_API_BASE_URL}/flow/day2?format=long`, {
-      baseline_inputs: state.baselineInputs,
-      day2_prefill: day2Prefill
-    });
+    const envelope = await postJson(
+      `${ORCHESTRATOR_API_BASE_URL}/flow/day2?format=long`,
+      withOptionalStrata({
+        baseline_inputs: state.baselineInputs,
+        day2_prefill: day2Prefill
+      }, priorAdjustments)
+    );
 
     state.day2Prefill = day2Prefill;
+    state.priorAdjustments = priorAdjustments;
     state.day2Response = envelope;
 
     renderDay2Results(envelope);
     showCard("exportCard");
-    setStatus("success", "Success: Day 2 treatment predictions completed.");
+    setStatus("success", `Success: Day 2 treatment predictions completed (${strataSummaryText(priorAdjustments)}).`);
   } catch (err) {
     setStatus("error", `Failed: ${err.message}`);
   } finally {

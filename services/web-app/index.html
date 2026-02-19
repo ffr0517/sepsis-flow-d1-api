@@ -47,6 +47,31 @@
         <h2>Baseline Presenting Clinical Features (Day 0)</h2>
         <span class="chip">Required Fields</span>
       </div>
+      <details id="priorAdjustmentsPanel" class="collapsible-panel">
+        <summary>Prevalence Adjustment (Optional)</summary>
+        <p class="hint">Leave both fields unset to use standard 50/50 (non-adjusted) predictions.</p>
+        <div class="grid-form prior-form">
+          <div class="field">
+            <label for="priorCountry">Country</label>
+            <select id="priorCountry" name="priorCountry">
+              <option value="">Not set (standard)</option>
+              <option value="Bangladesh">Bangladesh</option>
+              <option value="Cambodia">Cambodia</option>
+              <option value="Indonesia">Indonesia</option>
+              <option value="Laos">Laos</option>
+              <option value="Vietnam">Vietnam</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="priorInpatientStatus">Inpatient Status</label>
+            <select id="priorInpatientStatus" name="priorInpatientStatus">
+              <option value="">Not set (standard)</option>
+              <option value="Inpatient">Inpatient</option>
+              <option value="Outpatient">Outpatient</option>
+            </select>
+          </div>
+        </div>
+      </details>
       <form id="day1Form" class="grid-form"></form>
       <div class="actions">
         <button id="runDay1Btn" class="btn btn-primary" type="button">Run Day 1</button>

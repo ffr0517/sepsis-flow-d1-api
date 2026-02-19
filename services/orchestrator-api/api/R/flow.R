@@ -98,6 +98,25 @@ validate_required_fields <- function(x, required_fields) {
   setdiff(required_fields, names(x))
 }
 
+normalize_optional_scalar <- function(x) {
+  if (is.null(x) || length(x) == 0) return(NULL)
+  val <- trimws(as.character(x[[1]]))
+  if (!nzchar(val)) return(NULL)
+  val
+}
+
+extract_optional_strata <- function(payload) {
+  payload_strata <- if (is.list(payload$strata)) payload$strata else list()
+  country <- normalize_optional_scalar(payload$country %||% payload_strata$country %||% NULL)
+  inpatient_status <- normalize_optional_scalar(payload$inpatient_status %||% payload_strata$inpatient_status %||% NULL)
+
+  list(
+    country = country,
+    inpatient_status = inpatient_status,
+    has_any = !is.null(country) || !is.null(inpatient_status)
+  )
+}
+
 normalize_binary_int <- function(x) {
   if (is.logical(x)) return(as.integer(isTRUE(x)))
   if (is.numeric(x)) return(as.integer(x > 0.5))
