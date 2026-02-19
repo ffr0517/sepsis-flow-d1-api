@@ -249,7 +249,6 @@ function tableFromRows(rows) {
     hasValue(row.adjustedThresholdPct) ||
     hasValue(row.prevalencePct)
   );
-  const showStrata = formatted.some((row) => hasValue(row.prevalenceScope) || hasValue(row.prevalenceStratum));
 
   const header = `
     <th>Treatment</th>
@@ -257,23 +256,20 @@ function tableFromRows(rows) {
     ${showAdjusted ? "<th>Prevalence-Adjusted Probability (%)</th>" : ""}
     ${showAdjusted ? "<th>Adjusted Threshold (%)</th>" : ""}
     ${showAdjusted ? "<th>Stratum Prevalence (%)</th>" : ""}
-    ${showStrata ? "<th>Prevalence Scope</th>" : ""}
-    ${showStrata ? "<th>Prevalence Stratum</th>" : ""}
     <th>Voters Exceeding Threshold</th>
     <th>Votes Above Threshold (%)</th>
     <th>Overall Treatment Prediction</th>
   `;
   const body = formatted
     .map((row) => {
+      const rowClass = row.overallTreatmentPrediction === "Yes" ? "prediction-row-yes" : "";
       return `
-        <tr>
+        <tr class="${rowClass}">
           <td>${row.treatment}</td>
           <td>${row.avgPredictedProbabilityPct}</td>
           ${showAdjusted ? `<td>${row.adjustedPredictedProbabilityPct}</td>` : ""}
           ${showAdjusted ? `<td>${row.adjustedThresholdPct}</td>` : ""}
           ${showAdjusted ? `<td>${row.prevalencePct}</td>` : ""}
-          ${showStrata ? `<td>${row.prevalenceScope}</td>` : ""}
-          ${showStrata ? `<td>${row.prevalenceStratum}</td>` : ""}
           <td>${row.votersExceedingThreshold}</td>
           <td>${row.votesAboveThresholdPct}</td>
           <td>${row.overallTreatmentPrediction}</td>
@@ -298,8 +294,6 @@ function summaryCardsFromRows(rows) {
           <p><strong>Prevalence-Adjusted Probability:</strong> ${row.adjustedPredictedProbabilityPct}%</p>
           <p><strong>Adjusted Threshold:</strong> ${row.adjustedThresholdPct}%</p>
           <p><strong>Stratum Prevalence:</strong> ${row.prevalencePct}%</p>
-          <p><strong>Prevalence Scope:</strong> ${row.prevalenceScope || "-"}</p>
-          <p><strong>Prevalence Stratum:</strong> ${row.prevalenceStratum || "-"}</p>
         `
         : "";
       return `

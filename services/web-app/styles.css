@@ -272,6 +272,10 @@ td {
   padding: 9px 7px;
 }
 
+tr.prediction-row-yes td {
+  background: #fff6c4;
+}
+
 th {
   font-size: 0.78rem;
   text-transform: uppercase;
@@ -361,6 +365,9 @@ th {
   th,
   td {
     min-width: 140px;
+  }
+  .table-wrap {
+    display: none;
   }
   .summary-cards {
     display: grid;
