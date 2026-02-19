@@ -250,7 +250,7 @@ function init() {
     "oxy.ra": 98
   });
 
-  byId("apiBaseUrl").value = "https://YOUR-ORCHESTRATOR.onrender.com";
+  byId("apiBaseUrl").value = "https://sepsis-flow-orchestrator.onrender.com";
   byId("runDay1Btn").addEventListener("click", handleRunDay1);
   byId("runDay2Btn").addEventListener("click", handleRunDay2);
   byId("exportBtn").addEventListener("click", handleExport);
