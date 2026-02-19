@@ -175,6 +175,12 @@ code {
   transform: translateY(-1px);
 }
 
+.btn[disabled] {
+  opacity: 0.72;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .hidden {
   display: none;
 }

@@ -24,7 +24,11 @@ const state = {
   baselineInputs: null,
   day2Prefill: null,
   day1Response: null,
-  day2Response: null
+  day2Response: null,
+  loading: {
+    day1: false,
+    day2: false
+  }
 };
 
 const byId = (id) => document.getElementById(id);
@@ -57,6 +61,33 @@ function showStatus(payload) {
   const pre = byId("statusText");
   card.classList.remove("hidden");
   pre.textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+}
+
+function setLoading(phase, isLoading) {
+  state.loading[phase] = isLoading;
+  const runDay1Btn = byId("runDay1Btn");
+  const runDay2Btn = byId("runDay2Btn");
+  const anyLoading = state.loading.day1 || state.loading.day2;
+
+  if (phase === "day1") {
+    runDay1Btn.disabled = isLoading;
+    runDay1Btn.textContent = isLoading ? "Running Day 1..." : "Run Day 1";
+  }
+  if (phase === "day2") {
+    runDay2Btn.disabled = isLoading;
+    runDay2Btn.textContent = isLoading ? "Running Day 2..." : "Run Day 2";
+  }
+
+  if (anyLoading) {
+    showStatus({
+      phase: "loading",
+      message: "Prediction request in progress. On free hosting tiers, cold starts can take up to ~2 minutes.",
+      running: {
+        day1: state.loading.day1,
+        day2: state.loading.day2
+      }
+    });
+  }
 }
 
 function getApiBaseUrl() {
@@ -182,6 +213,7 @@ function downloadJson(filename, data) {
 
 async function handleRunDay1() {
   try {
+    setLoading("day1", true);
     const apiBase = getApiBaseUrl();
     const baselineInputs = collectBaselineInputs();
     const envelope = await postJson(`${apiBase}/flow/day1?format=long`, { data: baselineInputs });
@@ -199,11 +231,14 @@ async function handleRunDay1() {
     showStatus({ phase: "day1_complete", trace: envelope?.trace });
   } catch (err) {
     showStatus({ phase: "day1_error", message: err.message });
+  } finally {
+    setLoading("day1", false);
   }
 }
 
 async function handleRunDay2() {
   try {
+    setLoading("day2", true);
     if (!state.baselineInputs) throw new Error("Run Day 1 first to generate baseline and Day 2 prefill.");
     const apiBase = getApiBaseUrl();
     const day2Prefill = collectDay2Prefill();
@@ -221,6 +256,8 @@ async function handleRunDay2() {
     showStatus({ phase: "day2_complete", trace: envelope?.trace });
   } catch (err) {
     showStatus({ phase: "day2_error", message: err.message });
+  } finally {
+    setLoading("day2", false);
   }
 }
 
