@@ -402,9 +402,9 @@ async function runStartupWarmup() {
   state.startupReady = false;
   setInteractionLocked(true);
   byId("retryWarmupBtn").disabled = true;
-  setStatus("loading", "Loading: waking up Day 1 and Day 2 APIs before enabling the form.");
+  setStatus("loading", "Loading: API endpoints");
   setWarmupUi({
-    text: "Checking Day 1 and Day 2 APIs. This can take up to a few minutes on free-tier cold start.",
+    text: "Checking Day 1 and Day 2 APIs. This may take a few minutes",
     chipLabel: "Warming Up",
     chipClass: "chip-warn"
   });
