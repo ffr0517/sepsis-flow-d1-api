@@ -13,9 +13,8 @@ It is packaged for evaluation and validation workflows and is not for clinical d
 
 ---
 
-## Current Implementation (Legacy-Compatible)
+## Implementation
 
-This repository runs the current two-day Sepsis Flow workflow.
 
 ### Active Models
 
@@ -27,7 +26,55 @@ This repository runs the current two-day Sepsis Flow workflow.
 
 Each bundle is loaded directly by the matching service under `services/day1-api/api` and `services/day2-api/api`.
 
-**Note:** `services/day1-api/sepsis-flow-api.yaml` documents an older API contract and is not the primary contract for the current `/predict/day1` and `/predict/day2` services.
+### Active Implementation Details
+
+#### Data preprocessing and feature engineering
+
+- Missing numeric predictors are median-imputed and missing nominal predictors are mode-imputed.
+- Additionally, explicit missingness indicators are included so missingness patterns remain informative.
+- `oxy.ra` (SpO2 %) is log-transformed to reduce skew.
+- Age interactions with respiratory rate and heart rate are included to reflect age-dependent physiology.
+- Zero-variance predictors are removed.
+- Numeric predictors are normalized as the final preprocessing step.
+
+#### Day 1 treatment prediction design
+
+- Five separate Day 1 treatment outcomes are modeled.
+- Inputs are baseline clinical predictors only.
+- Each outcome model returns probability of receiving that Day 1 treatment level.
+
+#### Day 2 cascade and training design
+
+- Five separate Day 2 treatment outcomes are modeled.
+- Inputs are baseline clinical predictors plus Day 1 treatment indicators.
+- To avoid assuming perfect Day 1 knowledge at training time, Day 2 uses a double-record design per participant (inputed + real Day 1 treatment indicators)
+
+#### Ensemble specification and voting aggregation
+
+- Each outcome uses 120 constituent heads:
+  - 40 linear lasso heads
+  - 40 spline-lasso heads
+  - 40 CART heads
+- This structure is repeated for five outcomes on Day 1 and five outcomes on Day 2.
+- Per-head probabilities are converted to votes at threshold 0.5
+- Final classification uses simple majority
+
+#### Prior-adjusted probability outputs
+
+- Raw ensemble probabilities are produced under balanced (50/50) training priors and exposed as:
+  - `mean_predicted_probability`
+  - `p_50_50`
+  - `t_50_50`
+- When strata are provided, APIs additionally return:
+  - `p_adj`
+  - `t_adj`
+  - prevalence metadata fields
+- Strata-supported adjustments are:
+  - `country`
+  - `inpatient_status`
+  - `country_x_inpatient`
+- Adjustment uses prevalence from `prevalence_all_nested.rds` 
+- This mapping is monotonic, so ranking is preserved while probabilities are re-anchored to the selected prevalence stratum.
 
 ---
 
