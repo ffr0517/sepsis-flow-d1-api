@@ -209,6 +209,54 @@ call_health <- function(base_url, timeout_sec = 5) {
   list(ok = status < 400, status = status, body = body)
 }
 
+wait_for_downstream_ready <- function(base_url, timeout_sec = 90, poll_every_sec = 3, per_request_timeout_sec = 8) {
+  started <- Sys.time()
+  attempts <- 0L
+  last <- list(ok = FALSE, status = NA_integer_, error = "No attempts made.")
+
+  repeat {
+    attempts <- attempts + 1L
+    health <- call_health(base_url, timeout_sec = per_request_timeout_sec)
+    last <- health
+    if (isTRUE(health$ok)) {
+      return(list(ok = TRUE, attempts = attempts, last = health))
+    }
+
+    elapsed <- as.numeric(difftime(Sys.time(), started, units = "secs"))
+    if (elapsed >= timeout_sec) {
+      return(list(ok = FALSE, attempts = attempts, last = last, elapsed_seconds = round(elapsed, 2)))
+    }
+
+    Sys.sleep(poll_every_sec)
+  }
+}
+
+is_retryable_downstream_failure <- function(resp) {
+  if (isTRUE(resp$ok)) return(FALSE)
+  if (is.na(resp$status)) return(TRUE)
+  as.integer(resp$status) >= 500
+}
+
+call_json_post_with_retry <- function(base_url, path, body, query = list(), timeout_sec = 15, attempts = 3, delay_sec = 2) {
+  attempt <- 0L
+  last <- NULL
+
+  while (attempt < attempts) {
+    attempt <- attempt + 1L
+    resp <- call_json_post(base_url = base_url, path = path, body = body, query = query, timeout_sec = timeout_sec)
+    resp$attempt <- attempt
+    last <- resp
+
+    if (isTRUE(resp$ok) || !is_retryable_downstream_failure(resp)) {
+      break
+    }
+
+    if (attempt < attempts) Sys.sleep(delay_sec)
+  }
+
+  last
+}
+
 derive_day2_prefill <- function(day1_result) {
   out <- setNames(as.list(rep(0L, length(day2_treatment_fields))), day2_treatment_fields)
 

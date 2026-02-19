@@ -18,6 +18,10 @@ It returns a consistent response envelope:
 - `DAY1_API_BASE_URL` (default: `https://sepsis-flow-d1-api.onrender.com`)
 - `DAY2_API_BASE_URL` (default: `https://sepsis-flow-platform.onrender.com`)
 - `REQUEST_TIMEOUT_SECONDS` (default: `20`)
+- `WARMUP_TIMEOUT_SECONDS` (default: `90`)
+- `WARMUP_POLL_SECONDS` (default: `3`)
+- `DOWNSTREAM_RETRY_ATTEMPTS` (default: `3`)
+- `DOWNSTREAM_RETRY_DELAY_SECONDS` (default: `2`)
 - `CORS_ALLOW_ORIGINS` (default: `*`)
   - Comma-separated allowlist, e.g. `https://myapp.pages.dev,https://myapp.com`
 

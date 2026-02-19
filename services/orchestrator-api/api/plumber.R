@@ -31,6 +31,10 @@ source(file.path(api_dir, "R", "flow.R"))
 day1_api_base_url <- Sys.getenv("DAY1_API_BASE_URL", unset = "https://sepsis-flow-d1-api.onrender.com")
 day2_api_base_url <- Sys.getenv("DAY2_API_BASE_URL", unset = "https://sepsis-flow-platform.onrender.com")
 request_timeout_seconds <- as.numeric(Sys.getenv("REQUEST_TIMEOUT_SECONDS", unset = "20"))
+warmup_timeout_seconds <- as.numeric(Sys.getenv("WARMUP_TIMEOUT_SECONDS", unset = "90"))
+warmup_poll_seconds <- as.numeric(Sys.getenv("WARMUP_POLL_SECONDS", unset = "3"))
+downstream_retry_attempts <- as.integer(Sys.getenv("DOWNSTREAM_RETRY_ATTEMPTS", unset = "3"))
+downstream_retry_delay_seconds <- as.numeric(Sys.getenv("DOWNSTREAM_RETRY_DELAY_SECONDS", unset = "2"))
 cors_allow_origins <- trimws(strsplit(Sys.getenv("CORS_ALLOW_ORIGINS", unset = "*"), ",")[[1]])
 cors_allow_origins <- cors_allow_origins[nzchar(cors_allow_origins)]
 
@@ -78,7 +82,11 @@ function() {
     orchestrator = list(
       day1_api_base_url = day1_api_base_url,
       day2_api_base_url = day2_api_base_url,
-      request_timeout_seconds = request_timeout_seconds
+      request_timeout_seconds = request_timeout_seconds,
+      warmup_timeout_seconds = warmup_timeout_seconds,
+      warmup_poll_seconds = warmup_poll_seconds,
+      downstream_retry_attempts = downstream_retry_attempts,
+      downstream_retry_delay_seconds = downstream_retry_delay_seconds
     ),
     downstream = list(day1 = day1, day2 = day2)
   )
@@ -125,12 +133,35 @@ function(req, res, format = "long", vote_threshold = NULL) {
   day1_body <- list(data = baseline_input, levels = levels_day1)
   day1_body <- day1_body[!vapply(day1_body, is.null, logical(1))]
 
-  day1_resp <- call_json_post(
+  day1_warm <- wait_for_downstream_ready(
+    base_url = day1_api_base_url,
+    timeout_sec = warmup_timeout_seconds,
+    poll_every_sec = warmup_poll_seconds,
+    per_request_timeout_sec = min(10, request_timeout_seconds)
+  )
+  if (!isTRUE(day1_warm$ok)) {
+    res$status <- 502
+    return(envelope_error(
+      message = "Day 1 API did not become ready within warm-up timeout.",
+      code = "DOWNSTREAM_DAY1_WARMUP_TIMEOUT",
+      details = list(
+        endpoint = paste0(day1_api_base_url, "/health"),
+        warmup_attempts = day1_warm$attempts,
+        warmup_elapsed_seconds = day1_warm$elapsed_seconds %||% NA_real_,
+        last_health = day1_warm$last
+      ),
+      trace = finalize_trace(trace, started)
+    ))
+  }
+
+  day1_resp <- call_json_post_with_retry(
     base_url = day1_api_base_url,
     path = "/predict/day1",
     body = day1_body,
     query = day1_query,
-    timeout_sec = request_timeout_seconds
+    timeout_sec = request_timeout_seconds,
+    attempts = downstream_retry_attempts,
+    delay_sec = downstream_retry_delay_seconds
   )
 
   if (!isTRUE(day1_resp$ok)) {
@@ -141,6 +172,7 @@ function(req, res, format = "long", vote_threshold = NULL) {
       details = list(
         endpoint = day1_resp$url %||% paste0(day1_api_base_url, "/predict/day1"),
         downstream_status = day1_resp$status,
+        downstream_attempt = day1_resp$attempt %||% NA_integer_,
         downstream_error_type = day1_resp$error_type,
         downstream_message = day1_resp$error_message,
         downstream_body = day1_resp$response_body %||% NULL
@@ -226,12 +258,35 @@ function(req, res, format = "long", vote_threshold = NULL) {
   day2_body <- list(data = day2_input, levels = levels_day2)
   day2_body <- day2_body[!vapply(day2_body, is.null, logical(1))]
 
-  day2_resp <- call_json_post(
+  day2_warm <- wait_for_downstream_ready(
+    base_url = day2_api_base_url,
+    timeout_sec = warmup_timeout_seconds,
+    poll_every_sec = warmup_poll_seconds,
+    per_request_timeout_sec = min(10, request_timeout_seconds)
+  )
+  if (!isTRUE(day2_warm$ok)) {
+    res$status <- 502
+    return(envelope_error(
+      message = "Day 2 API did not become ready within warm-up timeout.",
+      code = "DOWNSTREAM_DAY2_WARMUP_TIMEOUT",
+      details = list(
+        endpoint = paste0(day2_api_base_url, "/health"),
+        warmup_attempts = day2_warm$attempts,
+        warmup_elapsed_seconds = day2_warm$elapsed_seconds %||% NA_real_,
+        last_health = day2_warm$last
+      ),
+      trace = finalize_trace(trace, started)
+    ))
+  }
+
+  day2_resp <- call_json_post_with_retry(
     base_url = day2_api_base_url,
     path = "/predict/day2",
     body = day2_body,
     query = day2_query,
-    timeout_sec = request_timeout_seconds
+    timeout_sec = request_timeout_seconds,
+    attempts = downstream_retry_attempts,
+    delay_sec = downstream_retry_delay_seconds
   )
 
   if (!isTRUE(day2_resp$ok)) {
@@ -242,6 +297,7 @@ function(req, res, format = "long", vote_threshold = NULL) {
       details = list(
         endpoint = day2_resp$url %||% paste0(day2_api_base_url, "/predict/day2"),
         downstream_status = day2_resp$status,
+        downstream_attempt = day2_resp$attempt %||% NA_integer_,
         downstream_error_type = day2_resp$error_type,
         downstream_message = day2_resp$error_message,
         downstream_body = day2_resp$response_body %||% NULL
