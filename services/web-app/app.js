@@ -1,3 +1,5 @@
+const ORCHESTRATOR_API_BASE_URL = "https://sepsis-flow-orchestrator.onrender.com";
+
 const BASELINE_FIELDS = [
   { key: "age.months", label: "Age (months)", type: "number", step: "1" },
   { key: "sex", label: "Sex (1=male, 0=female)", type: "number", step: "1", min: "0", max: "1" },
@@ -13,11 +15,11 @@ const BASELINE_FIELDS = [
 ];
 
 const DAY2_FIELDS = [
-  { key: "LEVEL1_TREATMENTS_D1_SAFE_0", label: "Day1 L1 Carry-Forward (1/0)" },
-  { key: "LEVEL2_TREATMENTS_D1_SAFE_0", label: "Day1 L2 Carry-Forward (1/0)" },
-  { key: "LEVEL3_TREATMENTS_D1_SAFE_0", label: "Day1 L3 Carry-Forward (1/0)" },
-  { key: "LEVEL4_TREATMENTS_D1_SAFE_0", label: "Day1 L4 Carry-Forward (1/0)" },
-  { key: "LEVEL5_TREATMENTS_D1_SAFE_0", label: "Day1 L5 Carry-Forward (1/0)" }
+  { key: "LEVEL1_TREATMENTS_D1_SAFE_0", label: "Day 1: Mechanical ventilation, inotropes, or renal replacement therapy" },
+  { key: "LEVEL2_TREATMENTS_D1_SAFE_0", label: "Day 1: CPAP or IV fluid bolus" },
+  { key: "LEVEL3_TREATMENTS_D1_SAFE_0", label: "Day 1: ICU admission with clinical reason" },
+  { key: "LEVEL4_TREATMENTS_D1_SAFE_0", label: "Day 1: O2 via face or nasal cannula" },
+  { key: "LEVEL5_TREATMENTS_D1_SAFE_0", label: "Day 1: Non-bolused IV fluids" }
 ];
 
 const state = {
@@ -56,18 +58,17 @@ function showCard(id) {
   byId(id).classList.remove("hidden");
 }
 
-function showStatus(payload) {
-  const card = byId("statusCard");
-  const pre = byId("statusText");
-  card.classList.remove("hidden");
-  pre.textContent = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+function setStatus(kind, message) {
+  const indicator = byId("statusIndicator");
+  const text = byId("statusText");
+  indicator.className = `status-indicator status-${kind}`;
+  text.textContent = message;
 }
 
 function setLoading(phase, isLoading) {
   state.loading[phase] = isLoading;
   const runDay1Btn = byId("runDay1Btn");
   const runDay2Btn = byId("runDay2Btn");
-  const anyLoading = state.loading.day1 || state.loading.day2;
 
   if (phase === "day1") {
     runDay1Btn.disabled = isLoading;
@@ -78,22 +79,9 @@ function setLoading(phase, isLoading) {
     runDay2Btn.textContent = isLoading ? "Running Day 2..." : "Run Day 2";
   }
 
-  if (anyLoading) {
-    showStatus({
-      phase: "loading",
-      message: "Prediction request in progress. On free hosting tiers, cold starts can take up to ~2 minutes.",
-      running: {
-        day1: state.loading.day1,
-        day2: state.loading.day2
-      }
-    });
+  if (state.loading.day1 || state.loading.day2) {
+    setStatus("loading", "Loading: running prediction request. Free-tier warm-up can take up to ~2 minutes.");
   }
-}
-
-function getApiBaseUrl() {
-  const url = (byId("apiBaseUrl").value || "").trim();
-  if (!url) throw new Error("Set your Orchestrator API Base URL before running predictions.");
-  return url.replace(/\/+$/, "");
 }
 
 function readNumberInput(id) {
@@ -120,58 +108,70 @@ function collectDay2Prefill() {
   return out;
 }
 
+function asPercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "";
+  return (num * 100).toFixed(2);
+}
+
+function formatPredictionRow(row) {
+  return {
+    treatment: row.level ?? "",
+    avgPredictedProbabilityPct: asPercent(row.mean_predicted_probability),
+    votersExceedingThreshold: row.votes_exceeding_threshold ?? "",
+    votesAboveThresholdPct: asPercent(row.votes_above_threshold),
+    overallTreatmentPrediction: row.predicted_treatment_by_majority_vote ? "Yes" : "No"
+  };
+}
+
 function tableFromRows(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return "<p class='hint'>No rows returned.</p>";
-  const columns = ["level", "mean_predicted_probability", "votes_exceeding_threshold", "votes_above_threshold", "predicted_treatment_by_majority_vote"];
-  const header = columns.map((c) => `<th>${c}</th>`).join("");
-  const body = rows
+  const formatted = rows.map(formatPredictionRow);
+  const header = `
+    <th>Treatment</th>
+    <th>Averaged Predicted Probability (%)</th>
+    <th>Voters Exceeding Threshold</th>
+    <th>Votes Above Threshold (%)</th>
+    <th>Overall Treatment Prediction</th>
+  `;
+  const body = formatted
     .map((row) => {
-      return `<tr>${columns.map((c) => `<td>${row[c] ?? ""}</td>`).join("")}</tr>`;
+      return `
+        <tr>
+          <td>${row.treatment}</td>
+          <td>${row.avgPredictedProbabilityPct}</td>
+          <td>${row.votersExceedingThreshold}</td>
+          <td>${row.votesAboveThresholdPct}</td>
+          <td>${row.overallTreatmentPrediction}</td>
+        </tr>
+      `;
     })
     .join("");
+
   return `
     <div class="table-wrap">
       <table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>
     </div>
-    ${summaryCardsFromRows(rows)}
+    ${summaryCardsFromRows(formatted)}
   `;
 }
 
 function summaryCardsFromRows(rows) {
   const cards = rows
     .map((row) => {
-      const probability = row.mean_predicted_probability;
-      const probText = Number.isFinite(Number(probability)) ? Number(probability).toFixed(3) : String(probability ?? "");
       return `
         <article class="summary-card">
-          <h3>${row.level ?? "Treatment Level"}</h3>
-          <p><strong>Mean Probability:</strong> ${probText}</p>
-          <p><strong>Votes > Threshold:</strong> ${row.votes_exceeding_threshold ?? ""}</p>
-          <p><strong>Vote Fraction:</strong> ${row.votes_above_threshold ?? ""}</p>
-          <p><strong>Majority Vote:</strong> ${row.predicted_treatment_by_majority_vote ?? ""}</p>
+          <h3>${row.treatment || "Treatment"}</h3>
+          <p><strong>Averaged Predicted Probability:</strong> ${row.avgPredictedProbabilityPct}%</p>
+          <p><strong>Voters Exceeding Threshold:</strong> ${row.votersExceedingThreshold}</p>
+          <p><strong>Votes Above Threshold:</strong> ${row.votesAboveThresholdPct}%</p>
+          <p><strong>Overall Treatment Prediction:</strong> ${row.overallTreatmentPrediction}</p>
         </article>
       `;
     })
     .join("");
 
   return `<div class="summary-cards">${cards}</div>`;
-}
-
-function initTabs() {
-  const buttons = Array.from(document.querySelectorAll("[data-tab-target]"));
-  const panels = Array.from(document.querySelectorAll("[data-tab-panel]"));
-  if (buttons.length === 0 || panels.length === 0) return;
-
-  buttons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const targetId = btn.getAttribute("data-tab-target");
-      buttons.forEach((b) => b.classList.remove("is-active"));
-      panels.forEach((p) => p.classList.remove("is-active"));
-      btn.classList.add("is-active");
-      const targetPanel = byId(targetId);
-      if (targetPanel) targetPanel.classList.add("is-active");
-    });
-  });
 }
 
 async function postJson(url, payload) {
@@ -199,8 +199,43 @@ function renderDay2Results(envelope) {
   showCard("day2ResultsCard");
 }
 
-function downloadJson(filename, data) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+function escapeCsvCell(value) {
+  const str = String(value ?? "");
+  if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
+  return str;
+}
+
+function buildCsvRows() {
+  const header = [
+    "Day",
+    "Treatment",
+    "Averaged Predicted Probability (%)",
+    "Voters Exceeding Threshold",
+    "Votes Above Threshold (%)",
+    "Overall Treatment Prediction"
+  ];
+  const lines = [header.map(escapeCsvCell).join(",")];
+
+  const day1Rows = (state.day1Response?.data?.day1_result || []).map((row) => ({ day: "Day 1", ...formatPredictionRow(row) }));
+  const day2Rows = (state.day2Response?.data?.day2_result || []).map((row) => ({ day: "Day 2", ...formatPredictionRow(row) }));
+
+  [...day1Rows, ...day2Rows].forEach((row) => {
+    const values = [
+      row.day,
+      row.treatment,
+      row.avgPredictedProbabilityPct,
+      row.votersExceedingThreshold,
+      row.votesAboveThresholdPct,
+      row.overallTreatmentPrediction
+    ];
+    lines.push(values.map(escapeCsvCell).join(","));
+  });
+
+  return lines.join("\n");
+}
+
+function downloadCsv(filename, csvText) {
+  const blob = new Blob([csvText], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -214,9 +249,8 @@ function downloadJson(filename, data) {
 async function handleRunDay1() {
   try {
     setLoading("day1", true);
-    const apiBase = getApiBaseUrl();
     const baselineInputs = collectBaselineInputs();
-    const envelope = await postJson(`${apiBase}/flow/day1?format=long`, { data: baselineInputs });
+    const envelope = await postJson(`${ORCHESTRATOR_API_BASE_URL}/flow/day1?format=long`, { data: baselineInputs });
 
     state.baselineInputs = envelope?.data?.baseline_inputs || baselineInputs;
     state.day2Prefill = envelope?.data?.day2_prefill || {};
@@ -228,9 +262,9 @@ async function handleRunDay1() {
     showCard("day2EditCard");
     byId("day2ResultsCard").classList.add("hidden");
     byId("exportCard").classList.add("hidden");
-    showStatus({ phase: "day1_complete", trace: envelope?.trace });
+    setStatus("success", "Success: Day 1 treatment predictions completed.");
   } catch (err) {
-    showStatus({ phase: "day1_error", message: err.message });
+    setStatus("error", `Failed: ${err.message}`);
   } finally {
     setLoading("day1", false);
   }
@@ -240,10 +274,9 @@ async function handleRunDay2() {
   try {
     setLoading("day2", true);
     if (!state.baselineInputs) throw new Error("Run Day 1 first to generate baseline and Day 2 prefill.");
-    const apiBase = getApiBaseUrl();
     const day2Prefill = collectDay2Prefill();
 
-    const envelope = await postJson(`${apiBase}/flow/day2?format=long`, {
+    const envelope = await postJson(`${ORCHESTRATOR_API_BASE_URL}/flow/day2?format=long`, {
       baseline_inputs: state.baselineInputs,
       day2_prefill: day2Prefill
     });
@@ -253,23 +286,22 @@ async function handleRunDay2() {
 
     renderDay2Results(envelope);
     showCard("exportCard");
-    showStatus({ phase: "day2_complete", trace: envelope?.trace });
+    setStatus("success", "Success: Day 2 treatment predictions completed.");
   } catch (err) {
-    showStatus({ phase: "day2_error", message: err.message });
+    setStatus("error", `Failed: ${err.message}`);
   } finally {
     setLoading("day2", false);
   }
 }
 
 function handleExport() {
-  const exportPayload = {
-    exported_at: new Date().toISOString(),
-    flow_day1_response: state.day1Response,
-    flow_day2_response: state.day2Response,
-    baseline_inputs: state.baselineInputs,
-    final_day2_prefill_used: state.day2Prefill
-  };
-  downloadJson("sepsis-flow-two-day-results.json", exportPayload);
+  if (!state.day1Response || !state.day2Response) {
+    setStatus("error", "Failed: run both Day 1 and Day 2 predictions before exporting CSV.");
+    return;
+  }
+  const csvText = buildCsvRows();
+  downloadCsv("sepsis-flow-two-day-results.csv", csvText);
+  setStatus("success", "Success: CSV export downloaded.");
 }
 
 function init() {
@@ -287,11 +319,10 @@ function init() {
     "oxy.ra": 98
   });
 
-  byId("apiBaseUrl").value = "https://sepsis-flow-orchestrator.onrender.com";
   byId("runDay1Btn").addEventListener("click", handleRunDay1);
   byId("runDay2Btn").addEventListener("click", handleRunDay2);
   byId("exportBtn").addEventListener("click", handleExport);
-  initTabs();
+  setStatus("neutral", "Ready to run Day 1 prediction.");
 }
 
 init();
