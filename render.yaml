@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: sepsis-flow-orchestrator
+    runtime: docker
+    plan: free
+    dockerfilePath: ./services/orchestrator-api/api/Dockerfile
+    envVars:
+      - key: DAY1_API_BASE_URL
+        value: https://sepsis-flow-d1-api.onrender.com
+      - key: DAY2_API_BASE_URL
+        value: https://sepsis-flow-platform.onrender.com
+      - key: REQUEST_TIMEOUT_SECONDS
+        value: 20
+      - key: CORS_ALLOW_ORIGINS
+        sync: false
+
+  - type: static
+    name: sepsis-flow-web-app
+    rootDir: services/web-app
+    staticPublishPath: .
+    pullRequestPreviewsEnabled: false
+    buildCommand: ""

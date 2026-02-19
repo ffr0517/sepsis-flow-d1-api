@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sepsis Flow | Two-Day Treatment Prediction</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+  <main class="app-shell">
+    <section class="hero card">
+      <p class="eyebrow">Sepsis Spotter Workflow</p>
+      <h1>Two-Day Treatment Prediction Console</h1>
+      <p class="subtitle">
+        Enter Day 1 patient inputs, review Day 1 treatment probabilities, edit Day 2 carried-forward treatment signals,
+        and run Day 2 predictions in one streamlined flow.
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="section-header">
+        <h2>Step 1: Baseline Presenting Clinical Features (Day 0)</h2>
+        <span class="chip">Required Fields</span>
+      </div>
+      <form id="day1Form" class="grid-form"></form>
+      <div class="actions">
+        <button id="runDay1Btn" class="btn btn-primary" type="button">Run Day 1</button>
+      </div>
+    </section>
+
+    <section class="card api-settings">
+      <h2>Connection</h2>
+      <label for="apiBaseUrl">Orchestrator API Base URL</label>
+      <input id="apiBaseUrl" type="url" placeholder="https://your-orchestrator.onrender.com" />
+      <p class="hint">Browser calls only the orchestrator endpoints: <code>/flow/day1</code> and
+        <code>/flow/day2</code>.</p>
+    </section>
+
+    <section class="card">
+      <div class="section-header">
+        <h2>Context & Methodology</h2>
+      </div>
+      <div class="info-tabs" role="tablist" aria-label="Methodology context tabs">
+        <button type="button" class="tab-btn is-active" data-tab-target="tab-methodology">Methodology</button>
+        <button type="button" class="tab-btn" data-tab-target="tab-paper">Paper Summary</button>
+        <button type="button" class="tab-btn" data-tab-target="tab-notes">Clinical Notes</button>
+      </div>
+      <div class="tab-panels">
+        <div id="tab-methodology" class="tab-panel is-active" data-tab-panel>
+          <h3>Methodology Placeholder</h3>
+          <p class="hint">Summary tab for development, methodology, etc.</p>
+        </div>
+        <div id="tab-paper" class="tab-panel" data-tab-panel>
+          <h3>Paper Context Placeholder</h3>
+          <p class="hint">Summary tab for paper abstract, inclusion criteria, and cohort details.</p>
+        </div>
+        <div id="tab-notes" class="tab-panel" data-tab-panel>
+          <h3>Clinical Notes Placeholder</h3>
+          <p class="hint">Summary tab for caveats, intended-use boundaries, and interpretation guidance.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="day1ResultsCard" class="card hidden">
+      <div class="section-header">
+        <h2>Step 2: Day 1 Predictions</h2>
+        <span class="chip chip-ok">Complete</span>
+      </div>
+      <div id="day1Results"></div>
+    </section>
+
+    <section id="day2EditCard" class="card hidden">
+      <div class="section-header">
+        <h2>Step 3: Day 2 Editable Prefill</h2>
+        <span class="chip">Review & Adjust</span>
+      </div>
+      <form id="day2Form" class="grid-form compact"></form>
+      <div class="actions">
+        <button id="runDay2Btn" class="btn btn-primary" type="button">Run Day 2</button>
+      </div>
+    </section>
+
+    <section id="day2ResultsCard" class="card hidden">
+      <div class="section-header">
+        <h2>Step 4: Day 2 Predictions</h2>
+        <span class="chip chip-ok">Complete</span>
+      </div>
+      <div id="day2Results"></div>
+    </section>
+
+    <section id="exportCard" class="card hidden">
+      <div class="section-header">
+        <h2>Export</h2>
+      </div>
+      <p class="hint">Download both flow responses and trace metadata as JSON.</p>
+      <div class="actions">
+        <button id="exportBtn" class="btn" type="button">Export Results JSON</button>
+      </div>
+    </section>
+
+    <section id="statusCard" class="card status hidden">
+      <h2>Status</h2>
+      <pre id="statusText"></pre>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+</body>
+
+</html>
