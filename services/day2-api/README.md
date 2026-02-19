@@ -1,8 +1,10 @@
-# Day 2 API (Placeholder)
+# Day 2 API
 
-This folder is reserved for the Day 2 API service.
+This service mirrors the Day 1 API scaffolding and serves Day 2 treatment
+predictions from `api/models/day2_bundle.rds`.
 
-Planned scope:
-- Accept Day 1 prediction outputs as features.
-- Run Day 2 treatment models.
-- Expose prediction endpoints aligned with the Day 1 contracts.
+Notes:
+- Endpoint: `POST /predict/day2`
+- Required inputs include all baseline clinical fields plus:
+  `LEVEL1_TREATMENTS_D1_SAFE_0` through `LEVEL5_TREATMENTS_D1_SAFE_0`
+- Demo scripts are included in this folder and match the Day 1 script patterns.
