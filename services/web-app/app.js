@@ -33,7 +33,7 @@ const BASELINE_FIELDS = [
       { label: "No", value: 0 }
     ]
   },
-  { key: "hr.all", label: "Heart Rate", type: "number", step: "0.1" },
+  { key: "hr.all", label: "MONKEY Rate", type: "number", step: "0.1" },
   { key: "rr.all", label: "Respiratory Rate", type: "number", step: "0.1" },
   { key: "envhtemp", label: "Temperature (C)", type: "number", step: "0.1" },
   {
