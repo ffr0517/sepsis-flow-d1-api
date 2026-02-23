@@ -168,6 +168,13 @@ python3 -m http.server 5173
 
 Open `http://localhost:5173` for the web app.
 
+Note: the current web app build is hardcoded to the deployed Render endpoints (orchestrator + Day 1 + Day 2) in `services/web-app/app.js`.
+Serving `services/web-app` locally does not automatically point the UI at your local APIs.
+To test the full stack locally through the UI, update the base URLs in `services/web-app/app.js` to:
+- orchestrator: `http://localhost:8000`
+- Day 1 API: `http://localhost:8001`
+- Day 2 API: `http://localhost:8002`
+
 ### Remote
 
 `render.yaml` currently defines deployment for the orchestrator (`sepsis-flow-orchestrator`) and static web app (`sepsis-flow-web-app`).
