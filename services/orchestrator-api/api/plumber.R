@@ -102,11 +102,16 @@ function() {
 }
 
 #* Warm up downstream APIs and wait until both are ready
+#* @get /warmup
 #* @post /warmup
 #* @serializer json list(auto_unbox = TRUE, digits = 10)
 function(res) {
   started <- Sys.time()
   trace <- new_trace("/warmup")
+  message(sprintf(
+    "[warmup] received request day1=%s day2=%s timeout=%.1fs poll=%.1fs per_request_timeout=%.1fs",
+    day1_api_base_url, day2_api_base_url, warmup_timeout_seconds, warmup_poll_seconds, warmup_request_timeout_seconds
+  ))
 
   warm <- wait_for_multiple_downstreams_ready(
     base_urls = list(
@@ -121,6 +126,10 @@ function(res) {
   day2 <- warm$day2
 
   if (!isTRUE(day1$ok) || !isTRUE(day2$ok)) {
+    message(sprintf(
+      "[warmup] failed day1_ok=%s day1_attempts=%d day2_ok=%s day2_attempts=%d",
+      isTRUE(day1$ok), as.integer(day1$attempts %||% 0L), isTRUE(day2$ok), as.integer(day2$attempts %||% 0L)
+    ))
     res$status <- 502
     return(envelope_error(
       message = "One or more downstream APIs did not become ready within warm-up timeout.",
@@ -130,6 +139,10 @@ function(res) {
     ))
   }
 
+  message(sprintf(
+    "[warmup] success day1_attempts=%d day2_attempts=%d",
+    as.integer(day1$attempts %||% 0L), as.integer(day2$attempts %||% 0L)
+  ))
   envelope_ok(
     data = list(day1 = day1, day2 = day2),
     warnings = list(),

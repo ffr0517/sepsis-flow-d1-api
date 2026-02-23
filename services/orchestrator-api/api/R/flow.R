@@ -155,6 +155,13 @@ compose_query_string <- function(query = list()) {
   if (length(parts) == 0) "" else paste0("?", paste(parts, collapse = "&"))
 }
 
+format_health_probe_log <- function(health) {
+  status <- if (is.null(health$status) || isTRUE(is.na(health$status))) "NA" else as.character(health$status)
+  err <- gsub("[\r\n]+", " ", as.character(health$error %||% ""))
+  if (!nzchar(trimws(err))) err <- "-"
+  paste0("ok=", isTRUE(health$ok), " status=", status, " error=", err)
+}
+
 call_json_post <- function(base_url, path, body, query = list(), timeout_sec = 15) {
   url <- paste0(trim_slashes(base_url), path, compose_query_string(query))
   started <- Sys.time()
@@ -232,11 +239,20 @@ wait_for_downstream_ready <- function(base_url, timeout_sec = 90, poll_every_sec
   started <- Sys.time()
   attempts <- 0L
   last <- list(ok = FALSE, status = NA_integer_, error = "No attempts made.")
+  target_label <- trim_slashes(base_url)
 
   repeat {
     attempts <- attempts + 1L
+    message(sprintf(
+      "[warmup] probing target=%s attempt=%d per_request_timeout=%.1fs",
+      target_label, attempts, per_request_timeout_sec
+    ))
     health <- call_health(base_url, timeout_sec = per_request_timeout_sec)
     last <- health
+    message(sprintf(
+      "[warmup] target=%s attempt=%d %s",
+      target_label, attempts, format_health_probe_log(health)
+    ))
     if (isTRUE(health$ok)) {
       return(list(ok = TRUE, attempts = attempts, last = health))
     }
@@ -270,9 +286,17 @@ wait_for_multiple_downstreams_ready <- function(base_urls, timeout_sec = 90, pol
     for (nm in names(urls)) {
       if (isTRUE(state[[nm]]$ok)) next
       state[[nm]]$attempts <- state[[nm]]$attempts + 1L
+      message(sprintf(
+        "[warmup] probing target=%s url=%s attempt=%d per_request_timeout=%.1fs",
+        nm, trim_slashes(urls[[nm]]), state[[nm]]$attempts, per_request_timeout_sec
+      ))
       health <- call_health(urls[[nm]], timeout_sec = per_request_timeout_sec)
       state[[nm]]$last <- health
       if (isTRUE(health$ok)) state[[nm]]$ok <- TRUE
+      message(sprintf(
+        "[warmup] target=%s attempt=%d %s",
+        nm, state[[nm]]$attempts, format_health_probe_log(health)
+      ))
     }
 
     if (all(vapply(state, function(x) isTRUE(x$ok), logical(1)))) {
