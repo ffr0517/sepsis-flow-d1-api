@@ -166,9 +166,10 @@ function(res) {
 #* @param vote_threshold:double Optional. Threshold passed to Day 1 API.
 #* @body raw JSON payload containing Day 1 baseline fields (optionally nested in data) and optional prevalence strata via `country`, `inpatient_status`, or nested `strata`.
 #* @serializer json list(auto_unbox = TRUE, digits = 10)
-function(req, res, format = "long", vote_threshold = NULL) {
+function(req, res, format = "long", vote_threshold = NA_real_) {
   started <- Sys.time()
   trace <- new_trace("/flow/day1")
+  vote_threshold <- normalize_optional_double(vote_threshold)
 
   payload <- read_json_body(req)
   if (is.null(payload)) {
@@ -290,9 +291,10 @@ function(req, res, format = "long", vote_threshold = NULL) {
 #* @param vote_threshold:double Optional. Threshold passed to Day 2 API.
 #* @body raw JSON payload with baseline_inputs and day2_prefill, or a complete data object, plus optional prevalence strata via `country`, `inpatient_status`, or nested `strata`.
 #* @serializer json list(auto_unbox = TRUE, digits = 10)
-function(req, res, format = "long", vote_threshold = NULL) {
+function(req, res, format = "long", vote_threshold = NA_real_) {
   started <- Sys.time()
   trace <- new_trace("/flow/day2")
+  vote_threshold <- normalize_optional_double(vote_threshold)
 
   payload <- read_json_body(req)
   if (is.null(payload)) {
