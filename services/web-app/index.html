@@ -28,17 +28,17 @@
         <span id="statusIndicator" class="status-indicator status-neutral"></span>
         <h2>Current Status</h2>
       </div>
-      <p id="statusText" class="status-text">Ready to run Day 1 prediction.</p>
+      <p id="statusText" class="status-text">API checks are manual. Click "Check API Status" to wake services and continue.</p>
     </section>
 
     <section id="warmupCard" class="card">
       <div class="section-header">
-        <h2>Startup Check</h2>
+        <h2>API Status Check</h2>
         <span id="warmupChip" class="chip">Pending</span>
       </div>
-      <p id="warmupText" class="hint">Checking Day 1 and Day 2 APIs. Inputs stay locked until both are ready.</p>
+      <p id="warmupText" class="hint">Manual check only. Click the button to send wake-up requests to the orchestrator, Day 1 API, and Day 2 API, then verify readiness.</p>
       <div class="actions">
-        <button id="retryWarmupBtn" class="btn" type="button">Retry Startup Check</button>
+        <button id="retryWarmupBtn" class="btn" type="button">Check API Status</button>
       </div>
     </section>
 

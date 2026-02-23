@@ -1,7 +1,11 @@
 const ORCHESTRATOR_API_BASE_URL = "https://sepsis-flow-orchestrator.onrender.com";
+const DAY1_API_BASE_URL = "https://sepsis-flow-d1-api.onrender.com";
+const DAY2_API_BASE_URL = "https://sepsis-flow-platform.onrender.com";
 const STARTUP_WARMUP_MAX_ATTEMPTS = 2;
 const STARTUP_WARMUP_RETRY_DELAY_MS = 3000;
 const STARTUP_WARMUP_REQUEST_TIMEOUT_MS = 210000;
+const BROWSER_WAKE_ROUNDS = 2;
+const BROWSER_WAKE_DELAY_MS = 2500;
 
 const BASELINE_FIELDS = [
   { key: "age.months", label: "Age (months)", type: "number", step: "1" },
@@ -76,6 +80,38 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function isAbortError(err) {
   return err?.name === "AbortError";
+}
+
+async function browserWake(url) {
+  try {
+    await fetch(url, {
+      method: "GET",
+      mode: "no-cors",
+      cache: "no-store",
+      credentials: "omit"
+    });
+  } catch (_) {
+    // Opaque / no-cors failures are not reliable signals; orchestrator warmup verifies readiness.
+  }
+}
+
+async function wakeServicesFromBrowser() {
+  const urls = [
+    `${ORCHESTRATOR_API_BASE_URL}/`,
+    `${DAY1_API_BASE_URL}/`,
+    `${DAY2_API_BASE_URL}/`
+  ];
+
+  for (let round = 1; round <= BROWSER_WAKE_ROUNDS; round += 1) {
+    setWarmupUi({
+      text: `Sending wake-up requests (${round}/${BROWSER_WAKE_ROUNDS}) to orchestrator, Day 1, and Day 2 APIs...`,
+      chipLabel: "Waking",
+      chipClass: "chip-warn"
+    });
+
+    await Promise.all(urls.map((url) => browserWake(url)));
+    if (round < BROWSER_WAKE_ROUNDS) await sleep(BROWSER_WAKE_DELAY_MS);
+  }
 }
 
 function makeFieldHtml({ key, label, type = "number", step = "any", min, max, options = [] }, value = "") {
@@ -468,7 +504,7 @@ function downloadCsv(filename, csvText) {
 
 async function handleRunDay1() {
   try {
-    if (!state.startupReady) throw new Error("Startup check is still running. Wait for APIs to be ready.");
+    if (!state.startupReady) throw new Error("APIs are not ready yet. Click 'Check API Status' first.");
     setLoading("day1", true);
     const baselineInputs = collectBaselineInputs();
     const priorAdjustments = collectOptionalStrata();
@@ -498,7 +534,7 @@ async function handleRunDay1() {
 
 async function handleRunDay2() {
   try {
-    if (!state.startupReady) throw new Error("Startup check is still running. Wait for APIs to be ready.");
+    if (!state.startupReady) throw new Error("APIs are not ready yet. Click 'Check API Status' first.");
     setLoading("day2", true);
     if (!state.baselineInputs) throw new Error("Run Day 1 first to generate baseline and Day 2 prefill.");
     const day2Prefill = collectDay2Prefill();
@@ -528,7 +564,7 @@ async function handleRunDay2() {
 
 function handleExport() {
   if (!state.startupReady) {
-    setStatus("error", "Failed: startup check has not completed yet.");
+    setStatus("error", "Failed: APIs are not ready yet. Click 'Check API Status' first.");
     return;
   }
   if (!state.day1Response || !state.day2Response) {
@@ -546,14 +582,15 @@ async function runStartupWarmup() {
   state.startupReady = false;
   setInteractionLocked(true);
   byId("retryWarmupBtn").disabled = true;
-  setStatus("loading", "Loading: API endpoints");
+  setStatus("loading", "Loading: checking API endpoints");
   setWarmupUi({
-    text: "Checking Day 1 and Day 2 APIs. Cold starts on Render can take 1-3 minutes.",
+    text: "Manual API check started. Sending wake-up requests, then verifying readiness. Cold starts on Render can take 1-3 minutes.",
     chipLabel: "Warming Up",
     chipClass: "chip-warn"
   });
 
   try {
+    await wakeServicesFromBrowser();
     let lastError = null;
 
     for (let attempt = 1; attempt <= STARTUP_WARMUP_MAX_ATTEMPTS; attempt += 1) {
@@ -568,7 +605,7 @@ async function runStartupWarmup() {
         lastError = err;
         if (attempt < STARTUP_WARMUP_MAX_ATTEMPTS) {
           setWarmupUi({
-            text: `Startup check attempt ${attempt} failed while waking APIs. Retrying...`,
+            text: `API status check attempt ${attempt} failed while verifying readiness. Retrying...`,
             chipLabel: "Retrying",
             chipClass: "chip-warn"
           });
@@ -583,7 +620,7 @@ async function runStartupWarmup() {
     setInteractionLocked(false);
     setStatus("neutral", "Ready to run Day 1 prediction.");
     setWarmupUi({
-      text: "Startup check complete. Day 1 and Day 2 APIs are ready.",
+      text: "API status check complete. Orchestrator, Day 1, and Day 2 APIs are ready.",
       chipLabel: "Ready",
       chipClass: "chip-ok"
     });
@@ -594,7 +631,7 @@ async function runStartupWarmup() {
     setInteractionLocked(true);
     setStatus("error", `Failed: ${warmupMessage}`);
     setWarmupUi({
-      text: `Startup check failed: ${warmupMessage}`,
+      text: `API status check failed: ${warmupMessage}`,
       chipLabel: "Failed",
       chipClass: "chip-error"
     });
@@ -623,7 +660,14 @@ function init() {
   byId("runDay2Btn").addEventListener("click", handleRunDay2);
   byId("exportBtn").addEventListener("click", handleExport);
   byId("retryWarmupBtn").addEventListener("click", runStartupWarmup);
-  runStartupWarmup();
+  setInteractionLocked(true);
+  state.startupReady = false;
+  setStatus("neutral", "APIs are idle. Click 'Check API Status' to wake services and continue.");
+  setWarmupUi({
+    text: "Manual check only. Click 'Check API Status' to send wake-up requests to the orchestrator, Day 1 API, and Day 2 API.",
+    chipLabel: "Pending",
+    chipClass: ""
+  });
 }
 
 init();
