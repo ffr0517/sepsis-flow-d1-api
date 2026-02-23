@@ -22,11 +22,11 @@ const BASELINE_FIELDS = [
       { label: "No", value: 0 }
     ]
   },
-  { key: "wfaz", label: "Weight-For-Age Z-Score", type: "number", step: "0.01" },
+  { key: "wfaz", label: "Weight-for-Age Z-Score", type: "number", step: "0.01" },
   { key: "cidysymp", label: "Illness Duration (days)", type: "number", step: "1" },
   {
     key: "not.alert",
-    label: "Not alert (AVPU < A) THIS WORDING CONFUSED ME WHEN CODING 1 OR 0 LOL",
+    label: "Not alert (AVPU < A)",
     type: "binary-radio",
     options: [
       { label: "Yes", value: 1 },
@@ -107,7 +107,7 @@ function makeFieldHtml({ key, label, type = "number", step = "any", min, max }, 
   if (key === "not.alert") {
     return renderBinaryPills(key, "Yes", "No", value);
   }
-  
+
   if (key === "crt.long") {
     return renderBinaryPills(key, "Yes", "No", value);
   }
