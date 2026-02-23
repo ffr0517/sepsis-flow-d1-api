@@ -114,11 +114,6 @@ async function wakeServicesFromBrowser() {
   }
 }
 
-function isAbortError(err) {
-  return err?.name === "AbortError";
-}
-
-
 function makeFieldHtml({ key, label, type = "number", step = "any", min, max }, value = "") {
   const renderBinaryPills = (keyName, leftText, rightText, val) => {
     const leftChecked = String(val) === "1" ? "checked" : "";
