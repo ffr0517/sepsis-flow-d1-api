@@ -43,6 +43,7 @@ if (!is.finite(warmup_request_timeout_seconds) || warmup_request_timeout_seconds
 warmup_request_timeout_seconds <- min(warmup_request_timeout_seconds, warmup_timeout_seconds)
 downstream_retry_attempts <- as.integer(Sys.getenv("DOWNSTREAM_RETRY_ATTEMPTS", unset = "3"))
 downstream_retry_delay_seconds <- as.numeric(Sys.getenv("DOWNSTREAM_RETRY_DELAY_SECONDS", unset = "2"))
+downstream_wake_path <- normalize_http_path(Sys.getenv("DOWNSTREAM_WAKE_PATH", unset = "/"), default = "/")
 cors_allow_origins <- trimws(strsplit(Sys.getenv("CORS_ALLOW_ORIGINS", unset = "*"), ",")[[1]])
 cors_allow_origins <- cors_allow_origins[nzchar(cors_allow_origins)]
 
@@ -109,21 +110,30 @@ function(res) {
   started <- Sys.time()
   trace <- new_trace("/warmup")
   message(sprintf(
-    "[warmup] received request day1=%s day2=%s timeout=%.1fs poll=%.1fs per_request_timeout=%.1fs",
-    day1_api_base_url, day2_api_base_url, warmup_timeout_seconds, warmup_poll_seconds, warmup_request_timeout_seconds
+    "[warmup] received request day1=%s day2=%s timeout=%.1fs poll=%.1fs per_request_timeout=%.1fs wake_path=%s",
+    day1_api_base_url, day2_api_base_url, warmup_timeout_seconds, warmup_poll_seconds, warmup_request_timeout_seconds, downstream_wake_path
   ))
 
-  warm <- wait_for_multiple_downstreams_ready(
-    base_urls = list(
-      day1 = day1_api_base_url,
-      day2 = day2_api_base_url
-    ),
-    timeout_sec = warmup_timeout_seconds,
+  per_target_warmup_timeout_seconds <- max(30, floor(warmup_timeout_seconds / 2))
+  message(sprintf(
+    "[warmup] sequential warmup enabled per_target_timeout=%.1fs",
+    per_target_warmup_timeout_seconds
+  ))
+
+  day1 <- wait_for_downstream_ready(
+    base_url = day1_api_base_url,
+    timeout_sec = per_target_warmup_timeout_seconds,
     poll_every_sec = warmup_poll_seconds,
-    per_request_timeout_sec = warmup_request_timeout_seconds
+    per_request_timeout_sec = warmup_request_timeout_seconds,
+    wake_path = downstream_wake_path
   )
-  day1 <- warm$day1
-  day2 <- warm$day2
+  day2 <- wait_for_downstream_ready(
+    base_url = day2_api_base_url,
+    timeout_sec = per_target_warmup_timeout_seconds,
+    poll_every_sec = warmup_poll_seconds,
+    per_request_timeout_sec = warmup_request_timeout_seconds,
+    wake_path = downstream_wake_path
+  )
 
   if (!isTRUE(day1$ok) || !isTRUE(day2$ok)) {
     message(sprintf(
@@ -201,7 +211,8 @@ function(req, res, format = "long", vote_threshold = NULL) {
     base_url = day1_api_base_url,
     timeout_sec = warmup_timeout_seconds,
     poll_every_sec = warmup_poll_seconds,
-    per_request_timeout_sec = warmup_request_timeout_seconds
+    per_request_timeout_sec = warmup_request_timeout_seconds,
+    wake_path = downstream_wake_path
   )
   if (!isTRUE(day1_warm$ok)) {
     res$status <- 502
@@ -336,7 +347,8 @@ function(req, res, format = "long", vote_threshold = NULL) {
     base_url = day2_api_base_url,
     timeout_sec = warmup_timeout_seconds,
     poll_every_sec = warmup_poll_seconds,
-    per_request_timeout_sec = warmup_request_timeout_seconds
+    per_request_timeout_sec = warmup_request_timeout_seconds,
+    wake_path = downstream_wake_path
   )
   if (!isTRUE(day2_warm$ok)) {
     res$status <- 502

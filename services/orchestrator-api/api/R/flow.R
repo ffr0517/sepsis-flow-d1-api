@@ -155,11 +155,59 @@ compose_query_string <- function(query = list()) {
   if (length(parts) == 0) "" else paste0("?", paste(parts, collapse = "&"))
 }
 
+normalize_http_path <- function(path, default = "/") {
+  val <- trimws(as.character(path %||% ""))
+  if (!nzchar(val)) val <- default
+  if (!startsWith(val, "/")) val <- paste0("/", val)
+  val
+}
+
 format_health_probe_log <- function(health) {
   status <- if (is.null(health$status) || isTRUE(is.na(health$status))) "NA" else as.character(health$status)
   err <- gsub("[\r\n]+", " ", as.character(health$error %||% ""))
   if (!nzchar(trimws(err))) err <- "-"
   paste0("ok=", isTRUE(health$ok), " status=", status, " error=", err)
+}
+
+call_http_get <- function(base_url, path = "/", timeout_sec = 5, accept = "*/*", parse_json = FALSE) {
+  normalized_path <- normalize_http_path(path)
+  url <- paste0(trim_slashes(base_url), normalized_path)
+
+  resp <- tryCatch(
+    {
+      httr2::request(url) |>
+        httr2::req_headers("Accept" = accept) |>
+        httr2::req_timeout(timeout_sec) |>
+        httr2::req_error(is_error = function(resp) FALSE) |>
+        httr2::req_perform()
+    },
+    error = function(e) e
+  )
+
+  if (inherits(resp, "error")) {
+    return(list(ok = FALSE, status = NA_integer_, url = url, error = resp$message))
+  }
+
+  status <- httr2::resp_status(resp)
+  text_body <- tryCatch(httr2::resp_body_string(resp), error = function(e) NULL)
+  parsed_body <- NULL
+  if (isTRUE(parse_json) && !is.null(text_body) && nzchar(text_body)) {
+    parsed_body <- tryCatch(jsonlite::fromJSON(text_body, simplifyVector = FALSE), error = function(e) NULL)
+  }
+
+  out <- list(
+    ok = status < 400,
+    status = status,
+    url = url,
+    body = parsed_body
+  )
+
+  if (!isTRUE(out$ok)) {
+    body_snippet <- if (is.null(text_body)) NULL else substr(gsub("[\r\n]+", " ", text_body), 1, 240)
+    if (!is.null(body_snippet) && nzchar(trimws(body_snippet))) out$error <- body_snippet
+  }
+
+  out
 }
 
 call_json_post <- function(base_url, path, body, query = list(), timeout_sec = 15) {
@@ -216,33 +264,54 @@ call_json_post <- function(base_url, path, body, query = list(), timeout_sec = 1
 }
 
 call_health <- function(base_url, timeout_sec = 5) {
-  url <- paste0(trim_slashes(base_url), "/health")
-  resp <- tryCatch(
-    {
-      httr2::request(url) |>
-        httr2::req_timeout(timeout_sec) |>
-        httr2::req_perform()
-    },
-    error = function(e) e
+  resp <- call_http_get(
+    base_url = base_url,
+    path = "/health",
+    timeout_sec = timeout_sec,
+    accept = "application/json, text/plain, */*",
+    parse_json = TRUE
   )
-
-  if (inherits(resp, "error")) {
-    return(list(ok = FALSE, status = NA_integer_, error = resp$message))
-  }
-
-  status <- httr2::resp_status(resp)
-  body <- tryCatch(httr2::resp_body_json(resp, simplifyVector = FALSE), error = function(e) NULL)
-  list(ok = status < 400, status = status, body = body)
+  list(
+    ok = resp$ok,
+    status = resp$status,
+    body = resp$body,
+    error = resp$error %||% NULL,
+    url = resp$url
+  )
 }
 
-wait_for_downstream_ready <- function(base_url, timeout_sec = 90, poll_every_sec = 3, per_request_timeout_sec = 8) {
+call_wake_probe <- function(base_url, timeout_sec = 10, path = "/") {
+  call_http_get(
+    base_url = base_url,
+    path = path,
+    timeout_sec = timeout_sec,
+    accept = "text/html,application/json,text/plain,*/*",
+    parse_json = FALSE
+  )
+}
+
+wait_for_downstream_ready <- function(base_url, timeout_sec = 90, poll_every_sec = 3, per_request_timeout_sec = 8, wake_path = "/") {
   started <- Sys.time()
   attempts <- 0L
   last <- list(ok = FALSE, status = NA_integer_, error = "No attempts made.")
   target_label <- trim_slashes(base_url)
+  wake_path_norm <- normalize_http_path(wake_path, default = "/")
+  use_wake_probe <- !identical(wake_path_norm, "/health")
+  wake_timeout_sec <- min(per_request_timeout_sec, max(10, poll_every_sec + 5))
 
   repeat {
     attempts <- attempts + 1L
+    if (isTRUE(use_wake_probe)) {
+      message(sprintf(
+        "[warmup] wake target=%s path=%s attempt=%d timeout=%.1fs",
+        target_label, wake_path_norm, attempts, wake_timeout_sec
+      ))
+      wake <- call_wake_probe(base_url, timeout_sec = wake_timeout_sec, path = wake_path_norm)
+      message(sprintf(
+        "[warmup] wake target=%s path=%s attempt=%d %s",
+        target_label, wake_path_norm, attempts, format_health_probe_log(wake)
+      ))
+    }
     message(sprintf(
       "[warmup] probing target=%s attempt=%d per_request_timeout=%.1fs",
       target_label, attempts, per_request_timeout_sec
