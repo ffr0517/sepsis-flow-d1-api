@@ -688,7 +688,7 @@ function init() {
   state.startupReady = false;
   setStatus("neutral", "APIs are idle. Click 'Check API Status' to wake services and continue.");
   setWarmupUi({
-    text: "Manual check only. Click 'Check API Status' to send wake-up requests to the orchestrator, Day 1 API, and Day 2 API.",
+    text: "Click 'Check API Status' to send wake-up requests to backend services. Expect 1-3 minutes for services to become ready.",
     chipLabel: "Pending",
     chipClass: ""
   });
