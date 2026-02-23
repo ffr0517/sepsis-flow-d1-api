@@ -1,6 +1,7 @@
 const ORCHESTRATOR_API_BASE_URL = "https://sepsis-flow-orchestrator.onrender.com";
 const STARTUP_WARMUP_MAX_ATTEMPTS = 2;
-const STARTUP_WARMUP_RETRY_DELAY_MS = 1500;
+const STARTUP_WARMUP_RETRY_DELAY_MS = 3000;
+const STARTUP_WARMUP_REQUEST_TIMEOUT_MS = 210000;
 
 const BASELINE_FIELDS = [
   { key: "age.months", label: "Age (months)", type: "number", step: "1" },
@@ -72,6 +73,10 @@ const state = {
 
 const byId = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function isAbortError(err) {
+  return err?.name === "AbortError";
+}
 
 function makeFieldHtml({ key, label, type = "number", step = "any", min, max, options = [] }, value = "") {
   if (type === "binary-radio") {
@@ -328,6 +333,70 @@ async function postJson(url, payload) {
   return body;
 }
 
+async function requestJson(url, { method = "GET", timeoutMs = 0, payload } = {}) {
+  const controller = timeoutMs > 0 ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+
+  try {
+    const options = {
+      method,
+      signal: controller?.signal
+    };
+
+    if (payload !== undefined) {
+      options.headers = { "Content-Type": "application/json", Accept: "application/json" };
+      options.body = JSON.stringify(payload);
+    } else {
+      options.headers = { Accept: "application/json" };
+    }
+
+    const resp = await fetch(url, options);
+    const raw = await resp.text();
+    const body = raw ? (() => {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return { raw };
+      }
+    })() : {};
+
+    if (!resp.ok) {
+      const err = new Error(body?.error?.message || `Request failed with HTTP ${resp.status}.`);
+      err.httpStatus = resp.status;
+      err.responseBody = body;
+      throw err;
+    }
+
+    return body;
+  } catch (err) {
+    if (isAbortError(err)) {
+      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds.`);
+    }
+    throw err;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+function summarizeWarmupTarget(details, key) {
+  const info = details?.[key];
+  if (!info) return null;
+  if (info.ok) return `${key.toUpperCase()}: ready`;
+  const status = Number.isFinite(Number(info?.last?.status)) ? `HTTP ${Number(info.last.status)}` : null;
+  const err = info?.last?.error ? String(info.last.error) : null;
+  const reason = status || err || "no response";
+  const attempts = Number.isFinite(Number(info?.attempts)) ? ` after ${Number(info.attempts)} probe(s)` : "";
+  return `${key.toUpperCase()}: ${reason}${attempts}`;
+}
+
+function summarizeWarmupError(err) {
+  const code = err?.responseBody?.error?.code ? ` [${err.responseBody.error.code}]` : "";
+  const details = err?.responseBody?.error?.details;
+  const targetSummaries = ["day1", "day2"].map((key) => summarizeWarmupTarget(details, key)).filter(Boolean);
+  if (targetSummaries.length === 0) return `${err.message || "Unknown error."}${code}`;
+  return `${err.message || "Unknown error."}${code} (${targetSummaries.join("; ")})`;
+}
+
 function renderDay1Results(envelope) {
   const rows = envelope?.data?.day1_result || [];
   byId("day1Results").innerHTML = tableFromRows(rows);
@@ -479,7 +548,7 @@ async function runStartupWarmup() {
   byId("retryWarmupBtn").disabled = true;
   setStatus("loading", "Loading: API endpoints");
   setWarmupUi({
-    text: "Checking Day 1 and Day 2 APIs. Cold starts can take up to about a minute.",
+    text: "Checking Day 1 and Day 2 APIs. Cold starts on Render can take 1-3 minutes.",
     chipLabel: "Warming Up",
     chipClass: "chip-warn"
   });
@@ -489,7 +558,10 @@ async function runStartupWarmup() {
 
     for (let attempt = 1; attempt <= STARTUP_WARMUP_MAX_ATTEMPTS; attempt += 1) {
       try {
-        await postJson(`${ORCHESTRATOR_API_BASE_URL}/warmup`, {});
+        await requestJson(`${ORCHESTRATOR_API_BASE_URL}/warmup`, {
+          method: "POST",
+          timeoutMs: STARTUP_WARMUP_REQUEST_TIMEOUT_MS
+        });
         lastError = null;
         break;
       } catch (err) {
@@ -516,11 +588,13 @@ async function runStartupWarmup() {
       chipClass: "chip-ok"
     });
   } catch (err) {
+    console.error("Startup warmup failed", err?.responseBody || err);
+    const warmupMessage = summarizeWarmupError(err);
     state.startupReady = false;
     setInteractionLocked(true);
-    setStatus("error", `Failed: ${err.message}`);
+    setStatus("error", `Failed: ${warmupMessage}`);
     setWarmupUi({
-      text: `Startup check failed: ${err.message}`,
+      text: `Startup check failed: ${warmupMessage}`,
       chipLabel: "Failed",
       chipClass: "chip-error"
     });
