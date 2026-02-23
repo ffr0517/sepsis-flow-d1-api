@@ -128,6 +128,14 @@ normalize_binary_int <- function(x) {
   0L
 }
 
+normalize_optional_double <- function(x) {
+  if (is.null(x) || length(x) == 0) return(NULL)
+  if (is.character(x) && length(x) == 1 && !nzchar(trimws(x))) return(NULL)
+  num <- suppressWarnings(as.numeric(x[[1]]))
+  if (!is.finite(num)) return(NULL)
+  num
+}
+
 normalize_day2_prefill <- function(prefill) {
   out <- setNames(as.list(rep(0L, length(day2_treatment_fields))), day2_treatment_fields)
   if (!is.list(prefill) || is.null(names(prefill))) return(out)
