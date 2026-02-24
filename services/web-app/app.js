@@ -343,7 +343,7 @@ function renderHeroCard(row) {
       </div>
 
       <div class="hero-right">
-        <div class="decision-badge decision-yes">Recommended</div>
+        <div class="decision-badge decision-yes">Predicted Treatment</div>
         <div class="prob-number">${pctDisplay}</div>
         <div class="prob-bar" aria-hidden="true">
           <div class="prob-fill" style="width: ${Math.min(100, pct)}%"></div>
@@ -375,16 +375,16 @@ function tableFromRows(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return "<p class='hint'>No rows returned.</p>";
   const formatted = rows.map(formatPredictionRow);
 
-  // pull priority recommendations and promote to big panel
+  // pull priority predicted treatments and promote to big panel
   const recommended = formatted.filter((r) => r.overallTreatmentPrediction === "Yes");
   const others = formatted.filter((r) => r.overallTreatmentPrediction !== "Yes");
 
-  // stack multiple recommendations by importance (if multiple)
+  // stack multiple predicted treatments by importance (if multiple)
   const heroHtml = recommended.length > 0
     ? `<section class="hero-section">
          <header class="hero-section-header">
-           <h3>${recommended.length} Recommendation${recommended.length > 1 ? "s" : ""}</h3>
-           <p class="muted small">Primary recommendation(s) for this patient:</p>
+           <h3>${recommended.length} Predicted Treatment${recommended.length > 1 ? "s" : ""}</h3>
+           <p class="muted small">Primary predicted treatment(s) for this patient:</p>
          </header>
          ${recommended.map(renderHeroCard).join("")}
        </section>`
@@ -409,13 +409,13 @@ function tableFromRows(rows) {
 function summaryCardsFromRows(rows) {
   const recommended = rows.filter((r) => r.overallTreatmentPrediction === "Yes");
   if (recommended.length === 0) {
-    return `<div class="topline-summary muted">No treatments recommended by majority vote.</div>`;
+    return `<div class="topline-summary muted">No predicted treatments by majority vote.</div>`;
   }
 
   const top = recommended[0];
   const topPct = top.avgPredictedProbabilityPct || "—";
   return `<div class="topline-summary">
-    <strong>${recommended.length} recommendation${recommended.length > 1 ? "s" : ""}:</strong>
+    <strong>${recommended.length} predicted treatment${recommended.length > 1 ? "s" : ""}:</strong>
     <span class="muted"> ${top.treatment} — ${topPct}%</span>
   </div>`;
 }
