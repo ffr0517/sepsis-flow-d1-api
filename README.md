@@ -1,6 +1,6 @@
 **Sepsis Flow Platform Repository Quick Links**
 
-[Platform Repo](https://github.com/ffr0517/sepsis-flow-platform)
+[Model Build Repo](https://github.com/ffr0517/sepsis-flow-build)
 [Day 1 API Service](./services/day1-api)
 [Day 2 API Service](./services/day2-api)
 [Web App](./services/web-app)
