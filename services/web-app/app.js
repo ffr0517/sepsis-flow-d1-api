@@ -309,75 +309,115 @@ function formatPredictionRow(row) {
   };
 }
 
-function tableFromRows(rows) {
-  if (!Array.isArray(rows) || rows.length === 0) return "<p class='hint'>No rows returned.</p>";
-  const formatted = rows.map(formatPredictionRow);
-  const showAdjusted = formatted.some((row) =>
-    hasValue(row.adjustedPredictedProbabilityPct) ||
-    hasValue(row.adjustedThresholdPct) ||
-    hasValue(row.prevalencePct)
-  );
 
-  const header = `
-    <th>Treatment</th>
-    <th>Averaged Predicted Probability (%)</th>
-    ${showAdjusted ? "<th>Prevalence-Adjusted Probability (%)</th>" : ""}
-    ${showAdjusted ? "<th>Adjusted Threshold (%)</th>" : ""}
-    ${showAdjusted ? "<th>Stratum Prevalence (%)</th>" : ""}
-    <th>Voters Exceeding Threshold</th>
-    <th>Votes Above Threshold (%)</th>
-    <th>Overall Treatment Prediction</th>
-  `;
-  const body = formatted
-    .map((row) => {
-      const rowClass = row.overallTreatmentPrediction === "Yes" ? "prediction-row-yes" : "";
-      return `
-        <tr class="${rowClass}">
-          <td>${row.treatment}</td>
-          <td>${row.avgPredictedProbabilityPct}</td>
-          ${showAdjusted ? `<td>${row.adjustedPredictedProbabilityPct}</td>` : ""}
-          ${showAdjusted ? `<td>${row.adjustedThresholdPct}</td>` : ""}
-          ${showAdjusted ? `<td>${row.prevalencePct}</td>` : ""}
-          <td>${row.votersExceedingThreshold}</td>
-          <td>${row.votesAboveThresholdPct}</td>
-          <td>${row.overallTreatmentPrediction}</td>
-        </tr>
-      `;
-    })
-    .join("");
+function confidenceClassFromPct(pctStr) {
+  const n = Number(String(pctStr).replace(/[^0-9.-]/g, "")) || 0;
+  if (n >= 80) return "confidence-strong";
+  if (n >= 60) return "confidence-moderate";
+  if (n >= 50) return "confidence-borderline";
+  return "confidence-weak";
+}
+
+function renderHeroCard(row) {
+  const pct = Number(String(row.avgPredictedProbabilityPct).replace(/[^0-9.-]/g, "")) || 0;
+  const pctDisplay = row.avgPredictedProbabilityPct === "" ? "—" : `${row.avgPredictedProbabilityPct}%`;
+  const confClass = confidenceClassFromPct(row.avgPredictedProbabilityPct);
+  // show adjusted lines if they exist
+  const adjustedLines = row.adjustedPredictedProbabilityPct || row.adjustedThresholdPct || row.prevalencePct
+    ? `<div class="hero-adjusted">
+         ${row.adjustedPredictedProbabilityPct ? `<div><strong>Adjusted:</strong> ${row.adjustedPredictedProbabilityPct}% (threshold: ${row.adjustedThresholdPct}%)</div>` : ""}
+         ${row.prevalencePct ? `<div><strong>Prevalence:</strong> ${row.prevalencePct}%</div>` : ""}
+       </div>`
+    : "";
 
   return `
-    <div class="table-wrap">
-      <table><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>
-    </div>
-    ${summaryCardsFromRows(formatted)}
+    <article class="treatment-hero ${confClass}">
+      <div class="hero-left">
+        <h3 class="hero-title">${row.treatment}</h3>
+        ${adjustedLines}
+        <div class="hero-support">
+          <span class="muted small">Voters exceeding threshold: ${row.votersExceedingThreshold}</span>
+          <span class="muted small">•</span>
+          <span class="muted small">Votes above threshold: ${row.votesAboveThresholdPct}%</span>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="decision-badge decision-yes">Recommended</div>
+        <div class="prob-number">${pctDisplay}</div>
+        <div class="prob-bar" aria-hidden="true">
+          <div class="prob-fill" style="width: ${Math.min(100, pct)}%"></div>
+        </div>
+      </div>
+    </article>
   `;
 }
 
-function summaryCardsFromRows(rows) {
-  const cards = rows
-    .map((row) => {
-      const adjustedLines = hasValue(row.adjustedPredictedProbabilityPct)
-        ? `
-          <p><strong>Prevalence-Adjusted Probability:</strong> ${row.adjustedPredictedProbabilityPct}%</p>
-          <p><strong>Adjusted Threshold:</strong> ${row.adjustedThresholdPct}%</p>
-          <p><strong>Stratum Prevalence:</strong> ${row.prevalencePct}%</p>
-        `
-        : "";
-      return `
-        <article class="summary-card">
-          <h3>${row.treatment || "Treatment"}</h3>
-          <p><strong>Averaged Predicted Probability:</strong> ${row.avgPredictedProbabilityPct}%</p>
-          ${adjustedLines}
-          <p><strong>Voters Exceeding Threshold:</strong> ${row.votersExceedingThreshold}</p>
-          <p><strong>Votes Above Threshold:</strong> ${row.votesAboveThresholdPct}%</p>
-          <p><strong>Overall Treatment Prediction:</strong> ${row.overallTreatmentPrediction}</p>
-        </article>
-      `;
-    })
-    .join("");
+function renderCompactRow(row) {
+  const pctDisplay = row.avgPredictedProbabilityPct === "" ? "—" : `${row.avgPredictedProbabilityPct}%`;
+  return `
+    <div class="compact-row ${row.overallTreatmentPrediction === "Yes" ? "compact-row-yes" : ""}">
+      <div class="compact-left">
+        <div class="compact-title">${row.treatment}</div>
+        <div class="muted small">Voters: ${row.votersExceedingThreshold} • Votes above threshold: ${row.votesAboveThresholdPct}%</div>
+      </div>
+      <div class="compact-right">
+        <div class="compact-prob">${pctDisplay}</div>
+        <div class="compact-decision">${row.overallTreatmentPrediction}</div>
+      </div>
+    </div>
+  `;
+}
 
-  return `<div class="summary-cards">${cards}</div>`;
+
+
+function tableFromRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return "<p class='hint'>No rows returned.</p>";
+  const formatted = rows.map(formatPredictionRow);
+
+  // pull priority recommendations and promote to big panel
+  const recommended = formatted.filter((r) => r.overallTreatmentPrediction === "Yes");
+  const others = formatted.filter((r) => r.overallTreatmentPrediction !== "Yes");
+
+  // stack multiple recommendations by importance (if multiple)
+  const heroHtml = recommended.length > 0
+    ? `<section class="hero-section">
+         <header class="hero-section-header">
+           <h3>${recommended.length} Recommendation${recommended.length > 1 ? "s" : ""}</h3>
+           <p class="muted small">Primary recommendation(s) for this patient:</p>
+         </header>
+         ${recommended.map(renderHeroCard).join("")}
+       </section>`
+    : "";
+
+  // supporting list
+  const compactSupportHtml = `
+    <section class="support-section">
+      <header class="support-section-header">
+        <h4>Other treatments</h4>
+      </header>
+
+      <div class="support-compact-cards">
+        ${others.map(renderCompactRow).join("")}
+      </div>
+    </section>
+  `;
+
+  return `${heroHtml}${compactSupportHtml}${summaryCardsFromRows(formatted)}`;
+}
+
+function summaryCardsFromRows(rows) {
+  const recommended = rows.filter((r) => r.overallTreatmentPrediction === "Yes");
+  if (recommended.length === 0) {
+    return `<div class="topline-summary muted">No treatments recommended by majority vote.</div>`;
+  }
+
+  const top = recommended[0];
+  const topPct = top.avgPredictedProbabilityPct || "—";
+  return `<div class="topline-summary">
+    <strong>${recommended.length} recommendation${recommended.length > 1 ? "s" : ""}:</strong>
+    <span class="muted"> ${top.treatment} — ${topPct}%</span>
+  </div>`;
 }
 
 async function postJson(url, payload) {
@@ -687,6 +727,7 @@ function init() {
   setInteractionLocked(true);
   state.startupReady = false;
   setStatus("neutral", "APIs are idle. Click 'Check API Status' to wake services and continue.");
+  
   setWarmupUi({
     text: "Click 'Check API Status' to send wake-up requests to backend services. Expect 1-3 minutes for services to become ready.",
     chipLabel: "Pending",
