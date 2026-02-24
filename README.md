@@ -177,6 +177,8 @@ What this does:
 Important:
 - Use `http://localhost:5173/index.local.html` for the local-API web app
 - `http://localhost:5173/index.html` still points at deployed Render endpoints
+- Local-only frontend changes should go in `services/web-app/app.local.js`
+- The Render-hosted frontend remains on `services/web-app/app.js`
 
 If you see `Failed to fetch` in the local page status:
 - Confirm the script is still running
@@ -205,6 +207,7 @@ python3 -m http.server 5173
 
 Open `http://localhost:5173/index.local.html` for the local-API web app.
 (`http://localhost:5173/index.html` still points at deployed Render endpoints.)
+Local-only frontend changes should be made in `services/web-app/app.local.js` (not `services/web-app/app.js`).
 
 ### Remote
 

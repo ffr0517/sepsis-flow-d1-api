@@ -30,6 +30,9 @@ Recommended (starts local APIs + orchestrator + web server, waits for health che
 
 Then open `http://localhost:5173/index.local.html`.
 
+Local-only frontend changes should be made in `app.local.js`.
+The deployed Render page continues to use `app.js` (via `index.html`).
+
 Manual web-only run (static server only; does not start APIs):
 
 ```bash
