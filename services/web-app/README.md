@@ -21,14 +21,25 @@ Static two-step frontend for the Day 1 -> Day 2 workflow.
 
 ## Local Run
 
-Any static server works.
+Recommended (starts local APIs + orchestrator + web server, waits for health checks):
+
+```bash
+# Run from the repository root
+./scripts/run-local-web.sh
+```
+
+Then open `http://localhost:5173/index.local.html`.
+
+Manual web-only run (static server only; does not start APIs):
 
 ```bash
 cd services/web-app
 python3 -m http.server 5173
 ```
 
-Then open `http://localhost:5173`.
+Then open:
+- `http://localhost:5173/index.local.html` for local APIs
+- `http://localhost:5173/index.html` for deployed Render endpoints
 
 ## Deploy (Cloudflare Pages)
 

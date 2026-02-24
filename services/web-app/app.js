@@ -1,6 +1,13 @@
-const ORCHESTRATOR_API_BASE_URL = "https://sepsis-flow-orchestrator.onrender.com";
-const DAY1_API_BASE_URL = "https://sepsis-flow-d1-api.onrender.com";
-const DAY2_API_BASE_URL = "https://sepsis-flow-platform.onrender.com";
+const API_BASE_URLS = window.SEPSIS_FLOW_API_BASE_URLS || {
+  orchestrator: "https://sepsis-flow-orchestrator.onrender.com",
+  day1: "https://sepsis-flow-d1-api.onrender.com",
+  day2: "https://sepsis-flow-platform.onrender.com"
+};
+const APP_CONFIG = window.SEPSIS_FLOW_APP_CONFIG || {};
+const SKIP_STARTUP_WARMUP = Boolean(APP_CONFIG.skipStartupWarmup);
+const ORCHESTRATOR_API_BASE_URL = API_BASE_URLS.orchestrator;
+const DAY1_API_BASE_URL = API_BASE_URLS.day1;
+const DAY2_API_BASE_URL = API_BASE_URLS.day2;
 const STARTUP_WARMUP_MAX_ATTEMPTS = 2;
 const STARTUP_WARMUP_RETRY_DELAY_MS = 3000;
 const STARTUP_WARMUP_REQUEST_TIMEOUT_MS = 210000;
@@ -50,15 +57,55 @@ const BASELINE_FIELDS = [
       { label: "No", value: 0 }
     ]
   },
-  { key: "oxy.ra", label: "SpO2 (%)", type: "number", step: "0.1" }
+  { key: "oxy.ra", label: "SpO2 (%)", type: "number", step: "0.1", min: "1", max: "100" }
 ];
 
 const DAY2_FIELDS = [
-  { key: "LEVEL1_TREATMENTS_D1_SAFE_0", label: "Day 1: Mechanical ventilation, inotropes, or renal replacement therapy" },
-  { key: "LEVEL2_TREATMENTS_D1_SAFE_0", label: "Day 1: CPAP or IV fluid bolus" },
-  { key: "LEVEL3_TREATMENTS_D1_SAFE_0", label: "Day 1: ICU admission with clinical reason" },
-  { key: "LEVEL4_TREATMENTS_D1_SAFE_0", label: "Day 1: O2 via face or nasal cannula" },
-  { key: "LEVEL5_TREATMENTS_D1_SAFE_0", label: "Day 1: Non-bolused IV fluids" }
+  {
+    key: "LEVEL1_TREATMENTS_D1_SAFE_0",
+    label: "Day 1: Mechanical ventilation, inotropes, or renal replacement therapy",
+    type: "binary-radio",
+    options: [
+      { label: "Received", value: 1 },
+      { label: "Not Received", value: 0 }
+    ]
+  },
+  {
+    key: "LEVEL2_TREATMENTS_D1_SAFE_0",
+    label: "Day 1: CPAP or IV fluid bolus",
+    type: "binary-radio",
+    options: [
+      { label: "Received", value: 1 },
+      { label: "Not Received", value: 0 }
+    ]
+  },
+  {
+    key: "LEVEL3_TREATMENTS_D1_SAFE_0",
+    label: "Day 1: ICU admission with clinical reason",
+    type: "binary-radio",
+    options: [
+      { label: "Received", value: 1 },
+      { label: "Not Received", value: 0 }
+    ]
+  },
+  {
+    key: "LEVEL4_TREATMENTS_D1_SAFE_0",
+    label: "Day 1: O2 via face or nasal cannula",
+    type: "binary-radio",
+    options: [
+      { label: "Received", value: 1 },
+      { label: "Not Received", value: 0 }
+    ]
+  },
+  {
+    key: "LEVEL5_TREATMENTS_D1_SAFE_0",
+    label: "Day 1: Non-bolused IV fluids",
+    type: "binary-radio",
+    options: [
+      { label: "Received", value: 1 },
+      { label: "Not Received", value: 0 }
+    ]
+  }
 ];
 
 const state = {
@@ -132,20 +179,16 @@ function makeFieldHtml({ key, label, type = "number", step = "any", min, max }, 
     `;
   };
 
-  if (key === "sex") {
-    return renderBinaryPills(key, "Male", "Female", value);
-  }
-
-  if (key === "adm.recent") {
-    return renderBinaryPills(key, "Yes", "No", value);
-  }
-
-  if (key === "not.alert") {
-    return renderBinaryPills(key, "Yes", "No", value);
-  }
-
-  if (key === "crt.long") {
-    return renderBinaryPills(key, "Yes", "No", value);
+  if (type === "binary-radio") {
+    const fieldDef = [...BASELINE_FIELDS, ...DAY2_FIELDS].find((field) => field.key === key);
+    if (fieldDef?.options?.length === 2) {
+      return renderBinaryPills(
+        key,
+        fieldDef.options[0].label,
+        fieldDef.options[1].label,
+        value
+      );
+    }
   }
 
   const minAttr = min !== undefined ? `min="${min}"` : "";
@@ -163,11 +206,15 @@ function renderDay1Form(defaults = {}) {
 }
 
 function renderDay2Form(prefill = {}) {
-  byId("day2Form").innerHTML = DAY2_FIELDS.map((f) => makeFieldHtml({ ...f, min: "0", max: "1", step: "1" }, prefill[f.key] ?? 0)).join("");
+  byId("day2Form").innerHTML = DAY2_FIELDS.map((f) => makeFieldHtml(f, prefill[f.key] ?? 0)).join("");
 }
 
 function showCard(id) {
   byId(id).classList.remove("hidden");
+}
+
+function hideCard(id) {
+  byId(id).classList.add("hidden");
 }
 
 function setStatus(kind, message) {
@@ -175,6 +222,14 @@ function setStatus(kind, message) {
   const text = byId("statusText");
   indicator.className = `status-indicator status-${kind}`;
   text.textContent = message;
+}
+
+function friendlyErrorMessage(err) {
+  const message = err?.message || "Unknown error.";
+  if (SKIP_STARTUP_WARMUP && /failed to fetch/i.test(message)) {
+    return `Could not reach local orchestrator at ${ORCHESTRATOR_API_BASE_URL}. Start local APIs on :8001/:8002 and orchestrator on :8000. Test ${ORCHESTRATOR_API_BASE_URL}/health. If needed, set CORS_ALLOW_ORIGINS=http://localhost:5173.`;
+  }
+  return message;
 }
 
 function setLoading(phase, isLoading) {
@@ -214,13 +269,30 @@ function setInteractionLocked(locked) {
   });
 }
 
+function clampNumberInputToBounds(el) {
+  if (!el || el.tagName !== "INPUT" || el.type !== "number" || el.value === "") return;
+  let n = Number(el.value);
+  if (!Number.isFinite(n)) return;
+  const min = el.min !== "" ? Number(el.min) : null;
+  const max = el.max !== "" ? Number(el.max) : null;
+  if (Number.isFinite(min) && n < min) n = min;
+  if (Number.isFinite(max) && n > max) n = max;
+  if (String(n) !== el.value) {
+    el.value = String(n);
+  }
+}
+
 function readNumberInput(id) {
   const el = byId(id);
   if (el) {
     if ("value" in el && el.type !== "radio") {
       const raw = el.value;
-      const n = Number(raw);
+      let n = Number(raw);
       if (!Number.isFinite(n)) throw new Error(`Invalid numeric value for ${id}.`);
+      if (el.type === "number") {
+        clampNumberInputToBounds(el);
+        n = Number(el.value);
+      }
       return n;
     }
   }
@@ -480,6 +552,20 @@ async function requestJson(url, { method = "GET", timeoutMs = 0, payload } = {})
   }
 }
 
+async function checkLocalOrchestratorHealth() {
+  if (!SKIP_STARTUP_WARMUP) return;
+
+  try {
+    await requestJson(`${ORCHESTRATOR_API_BASE_URL}/health`, {
+      method: "GET",
+      timeoutMs: 5000
+    });
+    setStatus("success", `Local API mode: connected to orchestrator at ${ORCHESTRATOR_API_BASE_URL}. Ready to run Day 1 prediction.`);
+  } catch (err) {
+    setStatus("error", `Local API mode: ${friendlyErrorMessage(err)}`);
+  }
+}
+
 function summarizeWarmupTarget(details, key) {
   const info = details?.[key];
   if (!info) return null;
@@ -592,7 +678,7 @@ async function handleRunDay1() {
     byId("exportCard").classList.add("hidden");
     setStatus("success", `Success: Day 1 treatment predictions completed (${strataSummaryText(priorAdjustments)}).`);
   } catch (err) {
-    setStatus("error", `Failed: ${err.message}`);
+    setStatus("error", `Failed: ${friendlyErrorMessage(err)}`);
   } finally {
     setLoading("day1", false);
   }
@@ -622,7 +708,7 @@ async function handleRunDay2() {
     showCard("exportCard");
     setStatus("success", `Success: Day 2 treatment predictions completed (${strataSummaryText(priorAdjustments)}).`);
   } catch (err) {
-    setStatus("error", `Failed: ${err.message}`);
+    setStatus("error", `Failed: ${friendlyErrorMessage(err)}`);
   } finally {
     setLoading("day2", false);
   }
@@ -643,6 +729,14 @@ function handleExport() {
 }
 
 async function runStartupWarmup() {
+  if (SKIP_STARTUP_WARMUP) {
+    state.startupReady = true;
+    state.startupWarming = false;
+    setInteractionLocked(false);
+    setStatus("neutral", "Local API mode: startup wake-up check is disabled. Ready to run Day 1 prediction.");
+    return;
+  }
+
   if (state.startupWarming) return;
   state.startupWarming = true;
   state.startupReady = false;
@@ -726,6 +820,23 @@ function init() {
   byId("runDay2Btn").addEventListener("click", handleRunDay2);
   byId("exportBtn").addEventListener("click", handleExport);
   byId("retryWarmupBtn").addEventListener("click", runStartupWarmup);
+  byId("day1Form").addEventListener("input", (event) => {
+    if (event.target?.id === "oxy.ra") clampNumberInputToBounds(event.target);
+  });
+  byId("day1Form").addEventListener("change", (event) => {
+    if (event.target?.id === "oxy.ra") clampNumberInputToBounds(event.target);
+  });
+
+  if (SKIP_STARTUP_WARMUP) {
+    hideCard("warmupCard");
+    setInteractionLocked(false);
+    state.startupReady = true;
+    state.startupWarming = false;
+    setStatus("neutral", `Local API mode: warm-up disabled. Using local orchestrator at ${ORCHESTRATOR_API_BASE_URL}.`);
+    void checkLocalOrchestratorHealth();
+    return;
+  }
+
   setInteractionLocked(true);
   state.startupReady = false;
   setStatus("neutral", "APIs are idle. Click 'Check API Status' to wake services and continue.");

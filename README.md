@@ -148,6 +148,43 @@ curl -X POST http://localhost:8000/flow/day1?format=long \
 
 ### Local
 
+Recommended local UI workflow (after cloning/pulling this repo): run the local stack script from the repository root, then open the local page (`index.local.html`).
+
+Prerequisites:
+- `R` (with required packages installed, including `plumber`)
+- `python3`
+- `curl`
+
+```bash
+# From the repository root
+# Starts Day 1 API, Day 2 API, orchestrator, and local web server
+./scripts/run-local-web.sh
+
+# If executable permissions are missing on your machine:
+# bash ./scripts/run-local-web.sh
+
+# Open in your browser:
+# http://localhost:5173/index.local.html
+```
+
+What this does:
+- Starts local Day 1 API (`:8001`)
+- Starts local Day 2 API (`:8002`)
+- Starts local orchestrator (`:8000`) pointed at the local APIs
+- Starts the static web app server (`:5173`)
+- Waits for health checks and runs orchestrator warmup
+
+Important:
+- Use `http://localhost:5173/index.local.html` for the local-API web app
+- `http://localhost:5173/index.html` still points at deployed Render endpoints
+
+If you see `Failed to fetch` in the local page status:
+- Confirm the script is still running
+- Check the log directory path printed by the script
+- Confirm `http://localhost:8000/health` loads locally
+
+Manual startup (advanced / debugging):
+
 ```bash
 # Day 1 API
 cd services/day1-api/api
@@ -159,21 +196,15 @@ R -e "pr <- plumber::plumb('plumber.R'); pr$run(host='0.0.0.0', port=8002)"
 
 # Orchestrator API (points to Day 1 + Day 2)
 cd services/orchestrator-api/api
-DAY1_API_BASE_URL=http://localhost:8001 DAY2_API_BASE_URL=http://localhost:8002 R -e "pr <- plumber::plumb('plumber.R'); pr$run(host='0.0.0.0', port=8000)"
+DAY1_API_BASE_URL=http://localhost:8001 DAY2_API_BASE_URL=http://localhost:8002 CORS_ALLOW_ORIGINS=http://localhost:5173 R -e "pr <- plumber::plumb('plumber.R'); pr$run(host='0.0.0.0', port=8000)"
 
 # Web app
 cd services/web-app
 python3 -m http.server 5173
 ```
 
-Open `http://localhost:5173` for the web app.
-
-Note: the current web app build is hardcoded to the deployed Render endpoints (orchestrator + Day 1 + Day 2) in `services/web-app/app.js`.
-Serving `services/web-app` locally does not automatically point the UI at your local APIs.
-To test the full stack locally through the UI, update the base URLs in `services/web-app/app.js` to:
-- orchestrator: `http://localhost:8000`
-- Day 1 API: `http://localhost:8001`
-- Day 2 API: `http://localhost:8002`
+Open `http://localhost:5173/index.local.html` for the local-API web app.
+(`http://localhost:5173/index.html` still points at deployed Render endpoints.)
 
 ### Remote
 
