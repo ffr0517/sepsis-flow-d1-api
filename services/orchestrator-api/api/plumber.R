@@ -65,6 +65,107 @@ extract_baseline_input <- function(payload) {
   as.list(candidate[baseline_fields])
 }
 
+wfaz_tool_first_value <- function(x) {
+  if (is.null(x) || length(x) == 0) return(NULL)
+  x[[1]]
+}
+
+wfaz_tool_parse_double <- function(x, field_label) {
+  value <- wfaz_tool_first_value(x)
+  if (is.null(value)) stop(sprintf("Missing required field: %s.", field_label), call. = FALSE)
+  if (is.character(value) && !nzchar(trimws(value))) {
+    stop(sprintf("Missing required field: %s.", field_label), call. = FALSE)
+  }
+  num <- suppressWarnings(as.numeric(value))
+  if (!is.finite(num)) stop(sprintf("Invalid numeric value for %s.", field_label), call. = FALSE)
+  num
+}
+
+wfaz_tool_parse_sex <- function(x) {
+  value <- wfaz_tool_first_value(x)
+  if (is.null(value)) stop("Missing required field: sex.", call. = FALSE)
+
+  if (is.numeric(value) || is.integer(value) || is.logical(value)) {
+    sex_num <- suppressWarnings(as.integer(value))
+    if (identical(sex_num, 1L)) return(list(anthro_code = 1L, label = "male"))
+    if (identical(sex_num, 0L) || identical(sex_num, 2L)) return(list(anthro_code = 2L, label = "female"))
+  }
+
+  sex_chr <- tolower(trimws(as.character(value)))
+  if (sex_chr %in% c("1", "m", "male")) return(list(anthro_code = 1L, label = "male"))
+  if (sex_chr %in% c("0", "2", "f", "female")) return(list(anthro_code = 2L, label = "female"))
+
+  stop("Invalid sex value. Expected app encoding (1=male, 0=female) or male/female.", call. = FALSE)
+}
+
+wfaz_tool_parse_weight_unit <- function(x) {
+  value <- wfaz_tool_first_value(x)
+  if (is.null(value)) stop("Missing required field: weight unit.", call. = FALSE)
+
+  if (is.numeric(value) || is.integer(value) || is.logical(value)) {
+    unit_num <- suppressWarnings(as.integer(value))
+    if (identical(unit_num, 1L)) return("kg")
+    if (identical(unit_num, 0L)) return("lbs")
+  }
+
+  unit_chr <- tolower(trimws(as.character(value)))
+  if (unit_chr %in% c("kg", "kgs", "kilogram", "kilograms")) return("kg")
+  if (unit_chr %in% c("lb", "lbs", "pound", "pounds")) return("lbs")
+
+  stop("Invalid weight unit. Expected kg or lbs.", call. = FALSE)
+}
+
+compute_wfaz_from_anthro <- function(sex, age_months, weight, weight_unit, days_per_month = 28) {
+  if (!requireNamespace("anthro", quietly = TRUE)) {
+    stop(
+      "R package 'anthro' is not installed in the local orchestrator environment. Install it with install.packages('anthro').",
+      call. = FALSE
+    )
+  }
+
+  sex_parsed <- wfaz_tool_parse_sex(sex)
+  age_months_num <- wfaz_tool_parse_double(age_months, "age.months")
+  weight_num <- wfaz_tool_parse_double(weight, "weight")
+  unit <- wfaz_tool_parse_weight_unit(weight_unit)
+
+  if (age_months_num < 0) stop("Age (months) must be >= 0.", call. = FALSE)
+  if (weight_num <= 0) stop("Weight must be > 0.", call. = FALSE)
+
+  age_days <- as.integer(round(age_months_num * days_per_month))
+  weight_kg <- if (identical(unit, "lbs")) weight_num * 0.45359237 else weight_num
+
+  anthro_result <- suppressWarnings(anthro::anthro_zscores(
+    sex = sex_parsed$anthro_code,
+    age = age_days,
+    is_age_in_month = FALSE,
+    weight = weight_kg
+  ))
+
+  if (!is.data.frame(anthro_result) || nrow(anthro_result) < 1) {
+    stop("anthro did not return a valid result.", call. = FALSE)
+  }
+
+  wfaz <- suppressWarnings(as.numeric(anthro_result$zwei[[1]] %||% NA_real_))
+  if (!is.finite(wfaz)) {
+    stop(
+      "anthro could not calculate weight-for-age z-score for the provided inputs (check age range and values).",
+      call. = FALSE
+    )
+  }
+
+  list(
+    wfaz = wfaz,
+    age_months = age_months_num,
+    age_days = age_days,
+    weight_input = list(value = weight_num, unit = unit),
+    weight_kg = weight_kg,
+    sex = list(app_value = wfaz_tool_first_value(sex), anthro_code = sex_parsed$anthro_code, label = sex_parsed$label),
+    anthro_flags = list(
+      fwei = if ("fwei" %in% names(anthro_result)) anthro_result$fwei[[1]] else NULL
+    )
+  )
+}
+
 #* @filter cors
 function(req, res) {
   set_cors_headers(req, res)
@@ -155,6 +256,69 @@ function(res) {
   ))
   envelope_ok(
     data = list(day1 = day1, day2 = day2),
+    warnings = list(),
+    trace = finalize_trace(trace, started)
+  )
+}
+
+#* Calculate WHO weight-for-age z-score (WFAZ) using the anthro package
+#* @post /tools/wfaz
+#* @body raw JSON payload with sex, age.months (or age_months), weight, and weight unit (kg/lbs)
+#* @serializer json list(auto_unbox = TRUE, digits = 10)
+function(req, res) {
+  started <- Sys.time()
+  trace <- new_trace("/tools/wfaz")
+
+  payload <- read_json_body(req)
+  if (is.null(payload)) {
+    res$status <- 400
+    return(envelope_error(
+      message = "Invalid JSON body.",
+      code = "INVALID_JSON",
+      trace = finalize_trace(trace, started)
+    ))
+  }
+
+  candidate <- payload$data %||% payload
+  if (!is.list(candidate)) {
+    res$status <- 400
+    return(envelope_error(
+      message = "Body must be a JSON object.",
+      code = "INVALID_WFAZ_INPUT",
+      trace = finalize_trace(trace, started)
+    ))
+  }
+
+  sex_input <- candidate$sex %||% candidate[["sex"]]
+  age_months_input <- candidate[["age.months"]] %||% candidate[["age_months"]]
+  weight_input <- candidate[["weight"]] %||% candidate[["weight.value"]] %||% candidate[["weight_value"]]
+  weight_unit_input <- candidate[["weight_unit"]] %||% candidate[["weight.unit"]]
+
+  wfaz_result <- tryCatch(
+    compute_wfaz_from_anthro(
+      sex = sex_input,
+      age_months = age_months_input,
+      weight = weight_input,
+      weight_unit = weight_unit_input,
+      days_per_month = 28
+    ),
+    error = function(e) e
+  )
+
+  if (inherits(wfaz_result, "error")) {
+    err_msg <- conditionMessage(wfaz_result)
+    is_missing_pkg <- grepl("package 'anthro' is not installed", err_msg, fixed = TRUE)
+    res$status <- if (is_missing_pkg) 503 else 422
+    return(envelope_error(
+      message = err_msg,
+      code = if (is_missing_pkg) "ANTHRO_NOT_INSTALLED" else "WFAZ_CALC_FAILED",
+      details = list(days_per_month = 28),
+      trace = finalize_trace(trace, started)
+    ))
+  }
+
+  envelope_ok(
+    data = wfaz_result,
     warnings = list(),
     trace = finalize_trace(trace, started)
   )

@@ -19,6 +19,15 @@ RUN_WARMUP="${SEPSIS_FLOW_RUN_WARMUP:-1}"
 PIDS=()
 NAMES=()
 LOGS=()
+REQUIRED_R_PACKAGES=(
+  plumber
+  jsonlite
+  httr2
+  workflows
+  glmnet
+  rlang
+  anthro
+)
 
 usage() {
   cat <<EOF
@@ -57,12 +66,107 @@ require_dir() {
 }
 
 require_cmd R
+require_cmd Rscript
 require_cmd python3
 require_cmd curl
 require_dir "$DAY1_DIR"
 require_dir "$DAY2_DIR"
 require_dir "$ORCH_DIR"
 require_dir "$WEB_DIR"
+
+join_by() {
+  local sep="$1"
+  shift
+  local out=""
+  local item
+  for item in "$@"; do
+    if [[ -n "$out" ]]; then
+      out+="$sep"
+    fi
+    out+="$item"
+  done
+  printf '%s' "$out"
+}
+
+find_missing_r_packages() {
+  Rscript -e '
+    pkgs <- commandArgs(trailingOnly = TRUE)
+    missing <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+    if (length(missing) > 0) writeLines(missing)
+  ' "${REQUIRED_R_PACKAGES[@]}"
+}
+
+install_r_packages() {
+  local pkgs=("$@")
+  if [[ ${#pkgs[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  echo
+  echo "Installing missing R packages from CRAN: $(join_by ", " "${pkgs[@]}")"
+  echo "This may take a few minutes and requires internet access."
+
+  Rscript -e '
+    pkgs <- commandArgs(trailingOnly = TRUE)
+    install.packages(
+      pkgs,
+      repos = "https://cloud.r-project.org",
+      Ncpus = max(1L, parallel::detectCores(logical = TRUE))
+    )
+    missing_after <- pkgs[!vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)]
+    if (length(missing_after) > 0) {
+      stop(sprintf(
+        "Some R packages are still unavailable after installation: %s",
+        paste(missing_after, collapse = ", ")
+      ), call. = FALSE)
+    }
+  ' "${pkgs[@]}"
+}
+
+ensure_required_r_packages() {
+  local missing_pkgs=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && missing_pkgs+=("$line")
+  done < <(find_missing_r_packages)
+
+  if [[ ${#missing_pkgs[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  echo "Missing required R packages for the local Sepsis Flow stack:"
+  local pkg
+  for pkg in "${missing_pkgs[@]}"; do
+    echo "  - $pkg"
+  done
+  echo
+  echo "The local stack cannot start until these packages are available."
+  echo "Note: 'anthro' is required for local WFAZ auto-calculation in the local web app."
+
+  if [[ ! -t 0 ]]; then
+    echo "Non-interactive shell detected, so package installation cannot be prompted." >&2
+    echo "Install them manually in R, then rerun this script." >&2
+    return 1
+  fi
+
+  local reply
+  read -r -p "Install missing R packages now? [Y/n] " reply
+  case "$reply" in
+    ""|y|Y|yes|YES|Yes)
+      install_r_packages "${missing_pkgs[@]}"
+      ;;
+    n|N|no|NO|No)
+      echo "Package installation declined. Exiting."
+      return 1
+      ;;
+    *)
+      echo "Unrecognized response: $reply" >&2
+      echo "Expected y/yes or n/no. Exiting." >&2
+      return 1
+      ;;
+  esac
+}
+
+ensure_required_r_packages
 
 mkdir -p "$LOG_DIR"
 

@@ -13,6 +13,8 @@ const STARTUP_WARMUP_RETRY_DELAY_MS = 3000;
 const STARTUP_WARMUP_REQUEST_TIMEOUT_MS = 210000;
 const BROWSER_WAKE_ROUNDS = 2;
 const BROWSER_WAKE_DELAY_MS = 2500;
+const WFAZ_AUTOFILL_DEBOUNCE_MS = 300;
+const WFAZ_AUTOFILL_SOURCE_KEYS = new Set(["age.months", "sex", "weight.value", "weight.unit"]);
 
 const BASELINE_FIELDS = [
   { key: "age.months", label: "Age (months)", type: "number", step: "1" },
@@ -25,6 +27,25 @@ const BASELINE_FIELDS = [
       { label: "Female", value: 0 }
     ]
   },
+  { key: "weight.value", label: "Weight", type: "number", step: "0.01", min: "0", clientOnly: true },
+  {
+    key: "weight.unit",
+    label: "Weight Unit",
+    type: "binary-radio",
+    clientOnly: true,
+    options: [
+      { label: "kg", value: 1 },
+      { label: "lbs", value: 0 }
+    ]
+  },
+  {
+    key: "wfaz",
+    label: "Weight-for-Age Z-Score (auto-calculated)",
+    type: "number",
+    step: "0.01",
+    readonly: true,
+    placeholder: "Auto-calculated from sex, age, and weight"
+  },
   {
     key: "adm.recent",
     label: "Recent admission (overnight hospitalisation within last 6 months)",
@@ -34,7 +55,6 @@ const BASELINE_FIELDS = [
       { label: "No", value: 0 }
     ]
   },
-  { key: "wfaz", label: "Weight-for-Age Z-Score", type: "number", step: "0.01" },
   { key: "cidysymp", label: "Illness Duration (days)", type: "number", step: "1" },
   {
     key: "not.alert",
@@ -115,6 +135,13 @@ const state = {
   day2Response: null,
   priorAdjustments: null,
   uniquePatientId: "",
+  wfazCalc: {
+    debounceId: null,
+    requestSeq: 0,
+    lastInputsKey: "",
+    lastError: null,
+    pending: false
+  },
   startupReady: false,
   startupWarming: false,
   loading: {
@@ -162,7 +189,7 @@ async function wakeServicesFromBrowser() {
   }
 }
 
-function makeFieldHtml({ key, label, type = "number", step = "any", min, max }, value = "") {
+function makeFieldHtml({ key, label, type = "number", step = "any", min, max, readonly, placeholder }, value = "") {
   const renderBinaryPills = (keyName, leftText, rightText, val) => {
     const leftChecked = String(val) === "1" ? "checked" : "";
     const rightChecked = String(val) === "0" ? "checked" : "";
@@ -194,10 +221,12 @@ function makeFieldHtml({ key, label, type = "number", step = "any", min, max }, 
 
   const minAttr = min !== undefined ? `min="${min}"` : "";
   const maxAttr = max !== undefined ? `max="${max}"` : "";
+  const readOnlyAttr = readonly ? "readonly" : "";
+  const placeholderAttr = placeholder !== undefined ? `placeholder="${placeholder}"` : "";
   return `
     <div class="field">
       <label for="${key}">${label}</label>
-      <input id="${key}" name="${key}" type="${type}" step="${step}" ${minAttr} ${maxAttr} value="${value}" required />
+      <input id="${key}" name="${key}" type="${type}" step="${step}" ${minAttr} ${maxAttr} ${readOnlyAttr} ${placeholderAttr} value="${value}" required />
     </div>
   `;
 }
@@ -288,6 +317,9 @@ function readNumberInput(id) {
   if (el) {
     if ("value" in el && el.type !== "radio") {
       const raw = el.value;
+      if (typeof raw === "string" && raw.trim() === "") {
+        throw new Error(`Missing numeric value for ${id}.`);
+      }
       let n = Number(raw);
       if (!Number.isFinite(n)) throw new Error(`Invalid numeric value for ${id}.`);
       if (el.type === "number") {
@@ -316,6 +348,7 @@ function readNumberInput(id) {
 function collectBaselineInputs() {
   const out = {};
   BASELINE_FIELDS.forEach((f) => {
+    if (f.clientOnly) return;
     if (f.type === "binary-radio") {
       const selected = document.querySelector(`input[name="${f.key}"]:checked`);
       if (!selected) throw new Error(`Select an option for ${f.label}.`);
@@ -325,6 +358,141 @@ function collectBaselineInputs() {
     out[f.key] = readNumberInput(f.key);
   });
   return out;
+}
+
+function readOptionalNumberValue(id) {
+  const el = byId(id);
+  if (!el || !("value" in el)) return null;
+  const raw = String(el.value ?? "").trim();
+  if (raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function readOptionalRadioNumberValue(name) {
+  const selected = document.querySelector(`input[name="${name}"]:checked`);
+  if (!selected) return null;
+  const n = Number(selected.value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function collectWfazAutofillInputs() {
+  const ageMonths = readOptionalNumberValue("age.months");
+  const sex = readOptionalRadioNumberValue("sex");
+  const weight = readOptionalNumberValue("weight.value");
+  const weightUnitCode = readOptionalRadioNumberValue("weight.unit");
+
+  if ([ageMonths, sex, weight, weightUnitCode].some((value) => value === null)) {
+    return null;
+  }
+
+  return {
+    sex,
+    "age.months": ageMonths,
+    weight,
+    weight_unit: weightUnitCode === 1 ? "kg" : "lbs"
+  };
+}
+
+function setWfazFieldState({ value = null, title = "" } = {}) {
+  const wfazEl = byId("wfaz");
+  if (!wfazEl) return;
+  wfazEl.value = value === null || value === undefined ? "" : String(value);
+  wfazEl.title = title;
+}
+
+async function calculateAndFillWfaz({ force = false } = {}) {
+  const wfazEl = byId("wfaz");
+  if (!wfazEl) return null;
+
+  const inputs = collectWfazAutofillInputs();
+  if (!inputs) {
+    state.wfazCalc.lastInputsKey = "";
+    state.wfazCalc.lastError = null;
+    setWfazFieldState({
+      value: null,
+      title: "Enter sex, age (months), weight, and weight unit to auto-calculate WFAZ."
+    });
+    return null;
+  }
+
+  const inputsKey = JSON.stringify(inputs);
+  if (!force && state.wfazCalc.lastInputsKey === inputsKey && wfazEl.value !== "") {
+    const cached = Number(wfazEl.value);
+    return Number.isFinite(cached) ? cached : null;
+  }
+
+  const requestSeq = ++state.wfazCalc.requestSeq;
+  state.wfazCalc.pending = true;
+  setWfazFieldState({
+    value: null,
+    title: "Calculating WFAZ via local anthro endpoint..."
+  });
+
+  try {
+    const envelope = await postJson(`${ORCHESTRATOR_API_BASE_URL}/tools/wfaz`, { data: inputs });
+    if (requestSeq !== state.wfazCalc.requestSeq) return null;
+
+    const wfaz = Number(envelope?.data?.wfaz);
+    if (!Number.isFinite(wfaz)) {
+      throw new Error("Local WFAZ endpoint returned an invalid value.");
+    }
+
+    state.wfazCalc.lastInputsKey = inputsKey;
+    state.wfazCalc.lastError = null;
+    setWfazFieldState({
+      value: wfaz.toFixed(2),
+      title: "Auto-calculated from sex, age, and weight using anthro."
+    });
+    return wfaz;
+  } catch (err) {
+    if (requestSeq !== state.wfazCalc.requestSeq) return null;
+    state.wfazCalc.lastInputsKey = "";
+    state.wfazCalc.lastError = err;
+    setWfazFieldState({
+      value: null,
+      title: `WFAZ auto-calc failed: ${friendlyErrorMessage(err)}`
+    });
+    return null;
+  } finally {
+    if (requestSeq === state.wfazCalc.requestSeq) {
+      state.wfazCalc.pending = false;
+    }
+  }
+}
+
+function scheduleWfazAutofill() {
+  if (state.wfazCalc.debounceId) clearTimeout(state.wfazCalc.debounceId);
+  state.wfazCalc.debounceId = setTimeout(() => {
+    state.wfazCalc.debounceId = null;
+    void calculateAndFillWfaz();
+  }, WFAZ_AUTOFILL_DEBOUNCE_MS);
+}
+
+function shouldTriggerWfazAutofill(target) {
+  if (!target) return false;
+  const key = target.name || target.id || "";
+  return WFAZ_AUTOFILL_SOURCE_KEYS.has(key);
+}
+
+async function ensureWfazReadyForDay1() {
+  if (state.wfazCalc.debounceId) {
+    clearTimeout(state.wfazCalc.debounceId);
+    state.wfazCalc.debounceId = null;
+  }
+
+  const inputs = collectWfazAutofillInputs();
+  if (!inputs) {
+    throw new Error("Enter sex, age (months), weight, and weight unit to auto-calculate WFAZ.");
+  }
+
+  await calculateAndFillWfaz({ force: true });
+
+  const wfaz = Number(byId("wfaz")?.value);
+  if (!Number.isFinite(wfaz)) {
+    const detail = state.wfazCalc.lastError ? ` ${friendlyErrorMessage(state.wfazCalc.lastError)}` : "";
+    throw new Error(`Could not auto-calculate WFAZ.${detail}`);
+  }
 }
 
 function collectDay2Prefill() {
@@ -745,6 +913,7 @@ function downloadCsv(filename, csvText) {
 async function handleRunDay1() {
   try {
     if (!state.startupReady) throw new Error("APIs are not ready yet. Click 'Check API Status' first.");
+    await ensureWfazReadyForDay1();
     setLoading("day1", true);
     state.uniquePatientId = collectUniquePatientId();
     setPatientIdChips(state.uniquePatientId);
@@ -899,8 +1068,10 @@ function init() {
   renderDay1Form({
     "age.months": 24,
     sex: 0,
+    "weight.value": 10,
+    "weight.unit": 1,
     "adm.recent": 0,
-    wfaz: -1.1,
+    wfaz: "",
     cidysymp: 2,
     "not.alert": 0,
     "hr.all": 120,
@@ -920,10 +1091,13 @@ function init() {
   });
   byId("day1Form").addEventListener("input", (event) => {
     if (event.target?.id === "oxy.ra") clampNumberInputToBounds(event.target);
+    if (shouldTriggerWfazAutofill(event.target)) scheduleWfazAutofill();
   });
   byId("day1Form").addEventListener("change", (event) => {
     if (event.target?.id === "oxy.ra") clampNumberInputToBounds(event.target);
+    if (shouldTriggerWfazAutofill(event.target)) scheduleWfazAutofill();
   });
+  void calculateAndFillWfaz({ force: true });
 
   if (SKIP_STARTUP_WARMUP) {
     hideCard("warmupCard");
