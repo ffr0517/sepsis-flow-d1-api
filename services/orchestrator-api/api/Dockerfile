@@ -12,11 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     g++ \
  && rm -rf /var/lib/apt/lists/*
 
-RUN R -q -e "install.packages(c('plumber','jsonlite','httr2'), repos='https://cloud.r-project.org', Ncpus=parallel::detectCores()); stopifnot(requireNamespace('plumber', quietly=TRUE), requireNamespace('jsonlite', quietly=TRUE), requireNamespace('httr2', quietly=TRUE))"
+RUN R -q -e "install.packages(c('plumber','jsonlite','httr2','anthro'), repos='https://cloud.r-project.org', Ncpus=parallel::detectCores()); stopifnot(requireNamespace('plumber', quietly=TRUE), requireNamespace('jsonlite', quietly=TRUE), requireNamespace('httr2', quietly=TRUE), requireNamespace('anthro', quietly=TRUE))"
 
 WORKDIR /app
 COPY services/orchestrator-api/api/plumber.R /app/plumber.R
 COPY services/orchestrator-api/api/R /app/R
+COPY day1_variable_importance.json /app/day1_variable_importance.json
+COPY day2_variable_importance.json /app/day2_variable_importance.json
 
 EXPOSE 8000
 

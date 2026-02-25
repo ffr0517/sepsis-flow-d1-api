@@ -65,6 +65,49 @@ extract_baseline_input <- function(payload) {
   as.list(candidate[baseline_fields])
 }
 
+find_repo_root_for_local_files <- function() {
+  candidates <- unique(normalizePath(c(
+    file.path(api_dir, "..", "..", ".."),
+    file.path(getwd(), "..", "..", ".."),
+    getwd()
+  ), winslash = "/", mustWork = FALSE))
+
+  for (dir in candidates) {
+    if (file.exists(file.path(dir, "services", "web-app", "app.local.js"))) return(dir)
+  }
+
+  NULL
+}
+
+read_variable_importance_json <- function(day_value) {
+  day_norm <- tolower(trimws(as.character(day_value %||% "")))
+  if (!day_norm %in% c("day1", "day2")) {
+    stop("Invalid 'day' value. Expected 'day1' or 'day2'.", call. = FALSE)
+  }
+
+  file_name <- sprintf("%s_variable_importance.json", day_norm)
+
+  repo_root <- find_repo_root_for_local_files()
+  candidate_paths <- unique(normalizePath(c(
+    if (!is.null(repo_root)) file.path(repo_root, file_name) else NULL,
+    file.path("/app", file_name),
+    file.path(api_dir, file_name),
+    file.path(getwd(), file_name),
+    file.path(api_dir, "..", "..", "..", file_name),
+    file.path(getwd(), "..", "..", "..", file_name)
+  ), winslash = "/", mustWork = FALSE))
+
+  found_path <- candidate_paths[file.exists(candidate_paths)][1] %||% NULL
+  if (is.null(found_path) || !nzchar(found_path)) {
+    stop(
+      sprintf("Variable importance file not found: %s", file_name),
+      call. = FALSE
+    )
+  }
+
+  jsonlite::fromJSON(found_path, simplifyVector = FALSE)
+}
+
 wfaz_tool_first_value <- function(x) {
   if (is.null(x) || length(x) == 0) return(NULL)
   x[[1]]
@@ -319,6 +362,32 @@ function(req, res) {
 
   envelope_ok(
     data = wfaz_result,
+    warnings = list(),
+    trace = finalize_trace(trace, started)
+  )
+}
+
+#* Load local variable-importance JSON (repo-root day1/day2 files)
+#* @get /tools/variable-importance
+#* @param day:string day1 or day2
+#* @serializer json list(auto_unbox = TRUE, digits = 10)
+function(res, day = "day1") {
+  started <- Sys.time()
+  trace <- new_trace("/tools/variable-importance")
+
+  out <- tryCatch(read_variable_importance_json(day), error = function(e) e)
+  if (inherits(out, "error")) {
+    err_msg <- conditionMessage(out)
+    res$status <- if (grepl("not found", err_msg, ignore.case = TRUE)) 404 else 422
+    return(envelope_error(
+      message = err_msg,
+      code = "VARIABLE_IMPORTANCE_LOAD_FAILED",
+      trace = finalize_trace(trace, started)
+    ))
+  }
+
+  envelope_ok(
+    data = out,
     warnings = list(),
     trace = finalize_trace(trace, started)
   )

@@ -13,6 +13,10 @@ const STARTUP_WARMUP_RETRY_DELAY_MS = 3000;
 const STARTUP_WARMUP_REQUEST_TIMEOUT_MS = 210000;
 const BROWSER_WAKE_ROUNDS = 2;
 const BROWSER_WAKE_DELAY_MS = 2500;
+const WFAZ_AUTOFILL_DEBOUNCE_MS = 300;
+const WFAZ_AUTOFILL_SOURCE_KEYS = new Set(["age.months", "sex", "weight.value", "weight.unit"]);
+const TEST_IMPORTANCE_PANEL_ID = "testImportanceCard";
+const TEST_IMPORTANCE_FEATURE_COUNT = 8;
 
 const BASELINE_FIELDS = [
   { key: "age.months", label: "Age (months)", type: "number", step: "1" },
@@ -25,6 +29,25 @@ const BASELINE_FIELDS = [
       { label: "Female", value: 0 }
     ]
   },
+  { key: "weight.value", label: "Weight", type: "number", step: "0.01", min: "0", clientOnly: true },
+  {
+    key: "weight.unit",
+    label: "Weight Unit",
+    type: "binary-radio",
+    clientOnly: true,
+    options: [
+      { label: "kg", value: 1 },
+      { label: "lbs", value: 0 }
+    ]
+  },
+  {
+    key: "wfaz",
+    label: "Weight-for-Age Z-Score (auto-calculated)",
+    type: "number",
+    step: "0.01",
+    readonly: true,
+    placeholder: "Auto-calculated from sex, age, and weight"
+  },
   {
     key: "adm.recent",
     label: "Recent admission (overnight hospitalisation within last 6 months)",
@@ -34,7 +57,6 @@ const BASELINE_FIELDS = [
       { label: "No", value: 0 }
     ]
   },
-  { key: "wfaz", label: "Weight-for-Age Z-Score", type: "number", step: "0.01" },
   { key: "cidysymp", label: "Illness Duration (days)", type: "number", step: "1" },
   {
     key: "not.alert",
@@ -115,6 +137,19 @@ const state = {
   day2Response: null,
   priorAdjustments: null,
   uniquePatientId: "",
+  variableImportance: {
+    day1: null,
+    day2: null,
+    loading: false,
+    error: null
+  },
+  wfazCalc: {
+    debounceId: null,
+    requestSeq: 0,
+    lastInputsKey: "",
+    lastError: null,
+    pending: false
+  },
   startupReady: false,
   startupWarming: false,
   loading: {
@@ -162,7 +197,7 @@ async function wakeServicesFromBrowser() {
   }
 }
 
-function makeFieldHtml({ key, label, type = "number", step = "any", min, max }, value = "") {
+function makeFieldHtml({ key, label, type = "number", step = "any", min, max, readonly, placeholder }, value = "") {
   const renderBinaryPills = (keyName, leftText, rightText, val) => {
     const leftChecked = String(val) === "1" ? "checked" : "";
     const rightChecked = String(val) === "0" ? "checked" : "";
@@ -194,10 +229,12 @@ function makeFieldHtml({ key, label, type = "number", step = "any", min, max }, 
 
   const minAttr = min !== undefined ? `min="${min}"` : "";
   const maxAttr = max !== undefined ? `max="${max}"` : "";
+  const readOnlyAttr = readonly ? "readonly" : "";
+  const placeholderAttr = placeholder !== undefined ? `placeholder="${placeholder}"` : "";
   return `
     <div class="field">
       <label for="${key}">${label}</label>
-      <input id="${key}" name="${key}" type="${type}" step="${step}" ${minAttr} ${maxAttr} value="${value}" required />
+      <input id="${key}" name="${key}" type="${type}" step="${step}" ${minAttr} ${maxAttr} ${readOnlyAttr} ${placeholderAttr} value="${value}" required />
     </div>
   `;
 }
@@ -288,6 +325,9 @@ function readNumberInput(id) {
   if (el) {
     if ("value" in el && el.type !== "radio") {
       const raw = el.value;
+      if (typeof raw === "string" && raw.trim() === "") {
+        throw new Error(`Missing numeric value for ${id}.`);
+      }
       let n = Number(raw);
       if (!Number.isFinite(n)) throw new Error(`Invalid numeric value for ${id}.`);
       if (el.type === "number") {
@@ -316,6 +356,7 @@ function readNumberInput(id) {
 function collectBaselineInputs() {
   const out = {};
   BASELINE_FIELDS.forEach((f) => {
+    if (f.clientOnly) return;
     if (f.type === "binary-radio") {
       const selected = document.querySelector(`input[name="${f.key}"]:checked`);
       if (!selected) throw new Error(`Select an option for ${f.label}.`);
@@ -325,6 +366,141 @@ function collectBaselineInputs() {
     out[f.key] = readNumberInput(f.key);
   });
   return out;
+}
+
+function readOptionalNumberValue(id) {
+  const el = byId(id);
+  if (!el || !("value" in el)) return null;
+  const raw = String(el.value ?? "").trim();
+  if (raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function readOptionalRadioNumberValue(name) {
+  const selected = document.querySelector(`input[name="${name}"]:checked`);
+  if (!selected) return null;
+  const n = Number(selected.value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function collectWfazAutofillInputs() {
+  const ageMonths = readOptionalNumberValue("age.months");
+  const sex = readOptionalRadioNumberValue("sex");
+  const weight = readOptionalNumberValue("weight.value");
+  const weightUnitCode = readOptionalRadioNumberValue("weight.unit");
+
+  if ([ageMonths, sex, weight, weightUnitCode].some((value) => value === null)) {
+    return null;
+  }
+
+  return {
+    sex,
+    "age.months": ageMonths,
+    weight,
+    weight_unit: weightUnitCode === 1 ? "kg" : "lbs"
+  };
+}
+
+function setWfazFieldState({ value = null, title = "" } = {}) {
+  const wfazEl = byId("wfaz");
+  if (!wfazEl) return;
+  wfazEl.value = value === null || value === undefined ? "" : String(value);
+  wfazEl.title = title;
+}
+
+async function calculateAndFillWfaz({ force = false } = {}) {
+  const wfazEl = byId("wfaz");
+  if (!wfazEl) return null;
+
+  const inputs = collectWfazAutofillInputs();
+  if (!inputs) {
+    state.wfazCalc.lastInputsKey = "";
+    state.wfazCalc.lastError = null;
+    setWfazFieldState({
+      value: null,
+      title: "Enter sex, age (months), weight, and weight unit to auto-calculate WFAZ."
+    });
+    return null;
+  }
+
+  const inputsKey = JSON.stringify(inputs);
+  if (!force && state.wfazCalc.lastInputsKey === inputsKey && wfazEl.value !== "") {
+    const cached = Number(wfazEl.value);
+    return Number.isFinite(cached) ? cached : null;
+  }
+
+  const requestSeq = ++state.wfazCalc.requestSeq;
+  state.wfazCalc.pending = true;
+  setWfazFieldState({
+    value: null,
+    title: "Calculating WFAZ via local anthro endpoint..."
+  });
+
+  try {
+    const envelope = await postJson(`${ORCHESTRATOR_API_BASE_URL}/tools/wfaz`, { data: inputs });
+    if (requestSeq !== state.wfazCalc.requestSeq) return null;
+
+    const wfaz = Number(envelope?.data?.wfaz);
+    if (!Number.isFinite(wfaz)) {
+      throw new Error("Local WFAZ endpoint returned an invalid value.");
+    }
+
+    state.wfazCalc.lastInputsKey = inputsKey;
+    state.wfazCalc.lastError = null;
+    setWfazFieldState({
+      value: wfaz.toFixed(2),
+      title: "Auto-calculated from sex, age, and weight using anthro."
+    });
+    return wfaz;
+  } catch (err) {
+    if (requestSeq !== state.wfazCalc.requestSeq) return null;
+    state.wfazCalc.lastInputsKey = "";
+    state.wfazCalc.lastError = err;
+    setWfazFieldState({
+      value: null,
+      title: `WFAZ auto-calc failed: ${friendlyErrorMessage(err)}`
+    });
+    return null;
+  } finally {
+    if (requestSeq === state.wfazCalc.requestSeq) {
+      state.wfazCalc.pending = false;
+    }
+  }
+}
+
+function scheduleWfazAutofill() {
+  if (state.wfazCalc.debounceId) clearTimeout(state.wfazCalc.debounceId);
+  state.wfazCalc.debounceId = setTimeout(() => {
+    state.wfazCalc.debounceId = null;
+    void calculateAndFillWfaz();
+  }, WFAZ_AUTOFILL_DEBOUNCE_MS);
+}
+
+function shouldTriggerWfazAutofill(target) {
+  if (!target) return false;
+  const key = target.name || target.id || "";
+  return WFAZ_AUTOFILL_SOURCE_KEYS.has(key);
+}
+
+async function ensureWfazReadyForDay1() {
+  if (state.wfazCalc.debounceId) {
+    clearTimeout(state.wfazCalc.debounceId);
+    state.wfazCalc.debounceId = null;
+  }
+
+  const inputs = collectWfazAutofillInputs();
+  if (!inputs) {
+    throw new Error("Enter sex, age (months), weight, and weight unit to auto-calculate WFAZ.");
+  }
+
+  await calculateAndFillWfaz({ force: true });
+
+  const wfaz = Number(byId("wfaz")?.value);
+  if (!Number.isFinite(wfaz)) {
+    const detail = state.wfazCalc.lastError ? ` ${friendlyErrorMessage(state.wfazCalc.lastError)}` : "";
+    throw new Error(`Could not auto-calculate WFAZ.${detail}`);
+  }
 }
 
 function collectDay2Prefill() {
@@ -409,6 +585,23 @@ function formatPredictionRow(row) {
   };
 }
 
+function normalizeImportanceOutcomeName(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/clinical reason/g, "")
+    .replace(/face mask/g, "face")
+    .replace(/\bmask\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function variableImportanceFeatureLabel(featureKey, fallbackLabel = "") {
+  const field = [...BASELINE_FIELDS, ...DAY2_FIELDS].find((f) => f.key === featureKey);
+  if (field?.label) return field.label;
+  if (fallbackLabel && fallbackLabel !== featureKey) return fallbackLabel;
+  return featureKey || fallbackLabel || "";
+}
+
 function displayMetaForRow(row) {
   const hasAdjustedProbability = hasValue(row.adjustedPredictedProbabilityPct);
   const displayProbabilityPct = hasAdjustedProbability ? row.adjustedPredictedProbabilityPct : row.avgPredictedProbabilityPct;
@@ -471,11 +664,12 @@ function confidenceClassFromPct(pctStr) {
   return "confidence-weak";
 }
 
-function renderHeroCard(row) {
+function renderHeroCard(row, options = {}) {
   const meta = displayMetaForRow(row);
   const pct = Number(String(meta.displayProbabilityPct).replace(/[^0-9.-]/g, "")) || 0;
   const pctDisplay = meta.displayProbabilityPct === "" ? "—" : `${meta.displayProbabilityPct}%`;
   const confClass = confidenceClassFromPct(meta.displayProbabilityPct);
+  const importanceDisclosure = options.showDummyImportance ? renderDummyImportanceDisclosure(row, options.dayKey) : "";
 
   return `
     <article class="treatment-hero ${confClass}">
@@ -491,6 +685,7 @@ function renderHeroCard(row) {
           <span class="muted small">•</span>
           <span class="muted small">Votes above threshold: ${row.votesAboveThresholdPct}%</span>
         </div>
+        ${importanceDisclosure}
       </div>
 
       <div class="hero-right">
@@ -506,15 +701,17 @@ function renderHeroCard(row) {
   `;
 }
 
-function renderCompactRow(row) {
+function renderCompactRow(row, options = {}) {
   const meta = displayMetaForRow(row);
   const pctDisplay = meta.displayProbabilityPct === "" ? "—" : `${meta.displayProbabilityPct}%`;
+  const importanceDisclosure = options.showDummyImportance ? renderDummyImportanceDisclosure(row, options.dayKey) : "";
   return `
     <div class="compact-row ${row.overallTreatmentPrediction === "Yes" ? "compact-row-yes" : ""}">
       <div class="compact-left">
         <div class="compact-title">${row.treatment}</div>
         <div class="muted small">${meta.probabilityLabel}: ${pctDisplay}</div>
         ${renderMetricsLine(row)}
+        ${importanceDisclosure}
       </div>
       <div class="compact-right">
         <div class="compact-prob">${pctDisplay}</div>
@@ -527,7 +724,7 @@ function renderCompactRow(row) {
 
 
 
-function tableFromRows(rows, priorAdjustments = null) {
+function tableFromRows(rows, priorAdjustments = null, options = {}) {
   if (!Array.isArray(rows) || rows.length === 0) return "<p class='hint'>No rows returned.</p>";
   const formatted = rows.map(formatPredictionRow);
   const priorSummaryHtml = renderPriorSelectionSummary(formatted, priorAdjustments);
@@ -543,7 +740,7 @@ function tableFromRows(rows, priorAdjustments = null) {
            <h3>${recommended.length} Predicted Treatment${recommended.length > 1 ? "s" : ""}</h3>
            <p class="muted small">Primary predicted treatment(s) for this patient:</p>
          </header>
-         ${recommended.map(renderHeroCard).join("")}
+         ${recommended.map((row) => renderHeroCard(row, options)).join("")}
        </section>`
     : "";
 
@@ -555,7 +752,7 @@ function tableFromRows(rows, priorAdjustments = null) {
       </header>
 
       <div class="support-compact-cards">
-        ${others.map(renderCompactRow).join("")}
+        ${others.map((row) => renderCompactRow(row, options)).join("")}
       </div>
     </section>
   `;
@@ -563,6 +760,115 @@ function tableFromRows(rows, priorAdjustments = null) {
   return `${priorSummaryHtml}${heroHtml}${compactSupportHtml}${summaryCardsFromRows(formatted)}`;
 
   return `${heroHtml}${compactSupportHtml}${summaryCardsFromRows(formatted)}`;
+}
+
+function renderDummyImportanceDisclosure(row, dayKey = "day1") {
+  const probability = Number(String(row?.avgPredictedProbabilityPct ?? "").replace(/[^0-9.-]/g, ""));
+  const probabilityText = Number.isFinite(probability) ? `${probability.toFixed(1)}%` : "n/a";
+  const outcomeName = row?.treatment || "Outcome";
+
+  const dataset = state.variableImportance?.[dayKey];
+  const outcomes = Array.isArray(dataset?.outcomes) ? dataset.outcomes : [];
+  const outcomeMap = new Map();
+  outcomes.forEach((outcome) => {
+    [outcome?.outcome_key, outcome?.outcome_label]
+      .filter(Boolean)
+      .map(normalizeImportanceOutcomeName)
+      .forEach((key) => {
+        if (!outcomeMap.has(key)) outcomeMap.set(key, outcome);
+      });
+  });
+
+  const normalizedTreatment = normalizeImportanceOutcomeName(outcomeName);
+  let matchedOutcome = outcomeMap.get(normalizedTreatment) || null;
+  if (!matchedOutcome && normalizedTreatment) {
+    for (const [key, value] of outcomeMap.entries()) {
+      if (key.includes(normalizedTreatment) || normalizedTreatment.includes(key)) {
+        matchedOutcome = value;
+        break;
+      }
+    }
+  }
+
+  const rawVars = Array.isArray(matchedOutcome?.variables)
+    ? matchedOutcome.variables
+    : (matchedOutcome?.variables && typeof matchedOutcome.variables === "object" ? Object.values(matchedOutcome.variables) : []);
+  const importanceRows = rawVars
+    .map((item) => {
+      const mean = Number(item?.mean);
+      const ciLow = Number(item?.ci_low);
+      const ciHigh = Number(item?.ci_high);
+      if (![mean, ciLow, ciHigh].every(Number.isFinite)) return null;
+      const featureKey = String(item?.feature_key ?? "");
+      return {
+        key: featureKey,
+        label: variableImportanceFeatureLabel(featureKey, String(item?.feature_label ?? "")),
+        mean,
+        low: Math.min(ciLow, ciHigh),
+        high: Math.max(ciLow, ciHigh)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.mean - a.mean);
+
+  let bodyHtml = "";
+  if (state.variableImportance.loading && !dataset) {
+    bodyHtml = `<p class="vi-inline-meta">Loading variable importance data...</p>`;
+  } else if (state.variableImportance.error && !dataset) {
+    bodyHtml = `<p class="vi-inline-meta">Variable importance unavailable: ${state.variableImportance.error}</p>`;
+  } else if (!matchedOutcome || importanceRows.length === 0) {
+    bodyHtml = `<p class="vi-inline-meta">No variable importance data found for this treatment.</p>`;
+  } else {
+    const dayLabel = dayKey === "day2" ? "Day 2" : "Day 1";
+    bodyHtml = `
+      <p class="vi-inline-meta">Averaged variable importance with 95% CI for ${outcomeName} (${dayLabel}). Averaged probability: ${probabilityText}.</p>
+      ${renderImportanceTable(importanceRows)}
+    `;
+  }
+
+  return `
+    <details class="vi-inline">
+      <summary>Variable importance</summary>
+      ${bodyHtml}
+    </details>
+  `;
+}
+
+function formatImportanceNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  if (Math.abs(n) < 0.01) return n.toFixed(4);
+  if (Math.abs(n) < 0.1) return n.toFixed(3);
+  return n.toFixed(2);
+}
+
+function renderImportanceTable(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return `<p class="vi-inline-meta">No variable importance rows available.</p>`;
+  }
+
+  const body = rows.map((row) => `
+    <tr>
+      <td>${row.label}</td>
+      <td>${formatImportanceNumber(row.mean)}</td>
+      <td>${formatImportanceNumber(row.low)} to ${formatImportanceNumber(row.high)}</td>
+    </tr>
+  `).join("");
+
+  return `
+    <div class="vi-table-wrap">
+      <table class="vi-table">
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Mean</th>
+            <th>95% CI</th>
+          </tr>
+        </thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 function summaryCardsFromRows(rows) {
@@ -672,15 +978,420 @@ function summarizeWarmupError(err) {
 }
 
 function renderDay1Results(envelope) {
+  void loadVariableImportanceData();
   const rows = envelope?.data?.day1_result || [];
-  byId("day1Results").innerHTML = tableFromRows(rows, state.priorAdjustments);
+  byId("day1Results").innerHTML = tableFromRows(rows, state.priorAdjustments, {
+    dayKey: "day1",
+    showDummyImportance: true
+  });
   showCard("day1ResultsCard");
 }
 
 function renderDay2Results(envelope) {
   const rows = envelope?.data?.day2_result || [];
-  byId("day2Results").innerHTML = tableFromRows(rows, state.priorAdjustments);
+  byId("day2Results").innerHTML = tableFromRows(rows, state.priorAdjustments, {
+    dayKey: "day2",
+    showDummyImportance: true
+  });
   showCard("day2ResultsCard");
+}
+
+function injectLocalTestImportanceStyles() {
+  if (byId("localTestImportanceStyles")) return;
+  const style = document.createElement("style");
+  style.id = "localTestImportanceStyles";
+  style.textContent = `
+    .test-importance-card.hidden { display: none; }
+    .test-importance-toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: end;
+      flex-wrap: wrap;
+      margin: 8px 0 12px;
+    }
+    .test-importance-toolbar .field {
+      min-width: 180px;
+      flex: 0 1 220px;
+    }
+    .test-importance-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      margin: 0 0 10px;
+    }
+    .test-importance-toggle input {
+      width: auto;
+      margin: 0;
+    }
+    .test-importance-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    .test-importance-outcome {
+      border: 1px solid #d7e4e1;
+      border-radius: 12px;
+      background: #fbfefd;
+      padding: 10px 12px;
+    }
+    .test-importance-outcome h4 {
+      margin: 0 0 4px;
+      font-size: 0.95rem;
+    }
+    .test-importance-meta {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .test-importance-plot {
+      width: 100%;
+      height: auto;
+      display: block;
+      border: 1px solid #e4efec;
+      border-radius: 10px;
+      background: linear-gradient(180deg, #ffffff, #fbfefd);
+    }
+    .test-importance-footnote {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .test-importance-empty {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin: 6px 0 0;
+    }
+    .vi-inline {
+      margin-top: 6px;
+      border: 1px solid #e6efec;
+      border-radius: 10px;
+      background: #fbfefd;
+      padding: 5px 8px;
+    }
+    .vi-inline summary {
+      cursor: pointer;
+      color: #5f7571;
+      font-weight: 600;
+      font-size: 0.76rem;
+      user-select: none;
+      display: inline-block;
+      letter-spacing: 0.01em;
+    }
+    .vi-inline[open] summary {
+      margin-bottom: 4px;
+    }
+    .vi-inline-meta {
+      margin: 0 0 4px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      line-height: 1.35;
+    }
+    .vi-inline .test-importance-plot {
+      margin-top: 1px;
+      border-color: #edf3f1;
+    }
+    .vi-table-wrap {
+      margin-top: 2px;
+      overflow-x: auto;
+    }
+    .vi-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.74rem;
+      line-height: 1.25;
+      color: var(--text);
+    }
+    .vi-table th,
+    .vi-table td {
+      padding: 4px 6px;
+      border-bottom: 1px solid #eef4f2;
+      text-align: left;
+      vertical-align: top;
+    }
+    .vi-table th {
+      font-weight: 700;
+      color: #5f7571;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+    .vi-table td:nth-child(2),
+    .vi-table td:nth-child(3) {
+      white-space: nowrap;
+    }
+    .vi-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+    @media (max-width: 700px) {
+      .test-importance-toolbar .field {
+        min-width: 100%;
+        flex-basis: 100%;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureTestImportancePanel() {
+  injectLocalTestImportanceStyles();
+  let card = byId(TEST_IMPORTANCE_PANEL_ID);
+  if (card) return card;
+
+  card = document.createElement("section");
+  card.id = TEST_IMPORTANCE_PANEL_ID;
+  card.className = "card gateable hidden test-importance-card";
+  card.innerHTML = `
+    <div class="section-header">
+      <h2>Test Feature: Variable Importance (Dummy Data)</h2>
+      <span class="chip chip-warn">Preview Only</span>
+    </div>
+    <details class="collapsible-panel" id="testImportanceDetails">
+      <summary>Expand dummy averaged variable-importance plots (95% CI)</summary>
+      <p class="hint">Local-only test UI. Uses fake placeholder data generated from the outcome names; real importance estimates can be wired in later.</p>
+      <div class="test-importance-toolbar">
+        <div class="field">
+          <label for="testImportanceDaySelect">Prediction day</label>
+          <select id="testImportanceDaySelect">
+            <option value="day1">Day 1 outcomes</option>
+            <option value="day2">Day 2 outcomes</option>
+          </select>
+        </div>
+      </div>
+      <label class="test-importance-toggle" for="testImportancePredictedOnly">
+        <input id="testImportancePredictedOnly" type="checkbox" checked />
+        Show predicted outcomes only (fallback to all if none predicted)
+      </label>
+      <div id="testImportanceContent" class="test-importance-grid"></div>
+      <div class="test-importance-footnote">X-axis shows dummy averaged importance (0-1) with 95% confidence intervals.</div>
+    </details>
+  `;
+
+  const anchor = byId("exportCard");
+  if (anchor?.parentNode) {
+    anchor.parentNode.insertBefore(card, anchor);
+  } else {
+    byId("day2ResultsCard")?.parentNode?.appendChild(card);
+  }
+
+  const daySelect = card.querySelector("#testImportanceDaySelect");
+  const predictedOnly = card.querySelector("#testImportancePredictedOnly");
+  daySelect?.addEventListener("change", renderTestImportancePanel);
+  predictedOnly?.addEventListener("change", renderTestImportancePanel);
+
+  return card;
+}
+
+function getTestImportanceFeatureDefs() {
+  return BASELINE_FIELDS
+    .filter((field) => !field.clientOnly)
+    .map((field) => ({ key: field.key, label: field.label }));
+}
+
+function stableHashUnit(text) {
+  let h = 2166136261;
+  const s = String(text ?? "");
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 1000000) / 1000000;
+}
+
+function generateDummyImportanceForOutcome({ outcomeName, dayKey }) {
+  const features = getTestImportanceFeatureDefs();
+  const rows = features.map((feature, idx) => {
+    const base = stableHashUnit(`${dayKey}|${outcomeName}|${feature.key}|mean|${idx}`);
+    const spreadSeed = stableHashUnit(`${dayKey}|${outcomeName}|${feature.key}|spread|${idx}`);
+    const mean = 0.03 + base * 0.62;
+    const halfWidth = 0.015 + spreadSeed * 0.09;
+    const low = Math.max(0, mean - halfWidth);
+    const high = Math.min(1, mean + halfWidth);
+    return { ...feature, mean, low, high };
+  });
+
+  return rows
+    .sort((a, b) => b.mean - a.mean)
+    .slice(0, TEST_IMPORTANCE_FEATURE_COUNT);
+}
+
+function svgEscape(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function renderImportancePlotSvg(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return "";
+
+  const longestLabelChars = rows.reduce(
+    (maxLen, row) => Math.max(maxLen, String(row?.label ?? "").length),
+    0
+  );
+  const labelW = Math.max(220, Math.min(460, Math.round(longestLabelChars * 6.8)));
+  const plotW = 280;
+  const rowH = 28;
+  const topPad = 28;
+  const bottomPad = 28;
+  const rightPad = 12;
+  const leftPad = 12;
+  const width = leftPad + labelW + plotW + rightPad;
+  const height = topPad + rows.length * rowH + bottomPad;
+  const x0 = leftPad + labelW;
+  const maxHigh = rows.reduce((acc, row) => Math.max(acc, Number(row.high) || 0), 0);
+  const rawMax = Math.max(0.01, maxHigh * 1.08);
+  const exponent = Math.floor(Math.log10(rawMax));
+  const magnitude = 10 ** exponent;
+  const normalizedMax = rawMax / magnitude;
+  const niceNorm = normalizedMax <= 1 ? 1 : normalizedMax <= 2 ? 2 : normalizedMax <= 5 ? 5 : 10;
+  const axisMax = niceNorm * magnitude;
+  const xScale = (value) => x0 + (Math.max(0, Math.min(axisMax, value)) / axisMax) * plotW;
+  const axisTicks = [0, 0.25, 0.5, 0.75, 1].map((p) => p * axisMax);
+  const tickDecimals = axisMax < 0.1 ? 3 : axisMax < 1 ? 2 : 1;
+
+  const gridLines = axisTicks.map((tick) => {
+    const x = xScale(tick);
+    return `
+      <line x1="${x}" y1="${topPad - 8}" x2="${x}" y2="${height - bottomPad + 6}" stroke="#e5efec" stroke-width="1" />
+      <text x="${x}" y="${height - 8}" text-anchor="middle" font-size="11" fill="#5a6f73">${tick.toFixed(tickDecimals)}</text>
+    `;
+  }).join("");
+
+  const rowSvg = rows.map((row, i) => {
+    const y = topPad + i * rowH + 12;
+    const lowX = xScale(row.low);
+    const meanX = xScale(row.mean);
+    const highX = xScale(row.high);
+    const label = svgEscape(row.label);
+    return `
+      <text x="${x0 - 8}" y="${y + 4}" text-anchor="end" font-size="11.5" fill="#1d2f33">${label}</text>
+      <line x1="${lowX}" y1="${y}" x2="${highX}" y2="${y}" stroke="#0f766e" stroke-width="2.4" stroke-linecap="round" />
+      <line x1="${lowX}" y1="${y - 5}" x2="${lowX}" y2="${y + 5}" stroke="#0f766e" stroke-width="1.3" />
+      <line x1="${highX}" y1="${y - 5}" x2="${highX}" y2="${y + 5}" stroke="#0f766e" stroke-width="1.3" />
+      <circle cx="${meanX}" cy="${y}" r="4.2" fill="#de7f42" stroke="#ffffff" stroke-width="1.2" />
+    `;
+  }).join("");
+
+  return `
+    <svg class="test-importance-plot" viewBox="0 0 ${width} ${height}" role="img" aria-label="Variable importance plot with 95% confidence intervals">
+      <rect x="0" y="0" width="${width}" height="${height}" fill="transparent" />
+      ${gridLines}
+      <line x1="${x0}" y1="${topPad - 8}" x2="${x0 + plotW}" y2="${topPad - 8}" stroke="#d7e4e1" stroke-width="1" />
+      <line x1="${x0}" y1="${height - bottomPad + 6}" x2="${x0 + plotW}" y2="${height - bottomPad + 6}" stroke="#d7e4e1" stroke-width="1" />
+      ${rowSvg}
+      <text x="${x0}" y="14" font-size="11" fill="#5a6f73">95% CI</text>
+      <circle cx="${x0 + 62}" cy="10" r="4" fill="#de7f42" stroke="#fff" stroke-width="1" />
+      <text x="${x0 + 72}" y="14" font-size="11" fill="#5a6f73">Mean</text>
+    </svg>
+  `;
+}
+
+function normalizeVariableImportanceDataset(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    version: raw.version ?? null,
+    metric: raw.metric ?? null,
+    ci_level: Number(raw.ci_level),
+    day: String(raw.day ?? "").toLowerCase(),
+    outcomes: Array.isArray(raw.outcomes) ? raw.outcomes : []
+  };
+}
+
+async function loadVariableImportanceData() {
+  if (state.variableImportance.loading) return;
+  if (state.variableImportance.day1 && state.variableImportance.day2) return;
+
+  state.variableImportance.loading = true;
+  state.variableImportance.error = null;
+
+  try {
+    const [day1Envelope, day2Envelope] = await Promise.all([
+      requestJson(`${ORCHESTRATOR_API_BASE_URL}/tools/variable-importance?day=day1`, {
+        method: "GET",
+        timeoutMs: 8000
+      }),
+      requestJson(`${ORCHESTRATOR_API_BASE_URL}/tools/variable-importance?day=day2`, {
+        method: "GET",
+        timeoutMs: 8000
+      })
+    ]);
+
+    state.variableImportance.day1 = normalizeVariableImportanceDataset(day1Envelope?.data);
+    state.variableImportance.day2 = normalizeVariableImportanceDataset(day2Envelope?.data);
+  } catch (err) {
+    state.variableImportance.error = friendlyErrorMessage(err);
+  } finally {
+    state.variableImportance.loading = false;
+    if (state.day1Response) {
+      renderDay1Results(state.day1Response);
+    }
+  }
+}
+
+function getPredictionRowsForImportance(dayKey) {
+  if (dayKey === "day2") return state.day2Response?.data?.day2_result || [];
+  return state.day1Response?.data?.day1_result || [];
+}
+
+function chooseImportanceOutcomeRows(rows, predictedOnlyPreferred) {
+  if (!Array.isArray(rows)) return [];
+  if (!predictedOnlyPreferred) return rows;
+  const predicted = rows.filter((row) => row?.predicted_treatment_by_majority_vote);
+  return predicted.length > 0 ? predicted : rows;
+}
+
+function renderTestImportancePanel() {
+  const card = ensureTestImportancePanel();
+  if (!card) return;
+
+  const hasDay1 = (state.day1Response?.data?.day1_result || []).length > 0;
+  const hasDay2 = (state.day2Response?.data?.day2_result || []).length > 0;
+
+  if (!hasDay1 && !hasDay2) {
+    card.classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+
+  const daySelect = card.querySelector("#testImportanceDaySelect");
+  const predictedOnlyCheckbox = card.querySelector("#testImportancePredictedOnly");
+  const content = card.querySelector("#testImportanceContent");
+  if (!daySelect || !predictedOnlyCheckbox || !content) return;
+
+  const desiredDay = daySelect.value || "day1";
+  if (desiredDay === "day2" && !hasDay2) daySelect.value = hasDay1 ? "day1" : "day2";
+  if (desiredDay === "day1" && !hasDay1) daySelect.value = hasDay2 ? "day2" : "day1";
+
+  const dayKey = daySelect.value;
+  const rows = getPredictionRowsForImportance(dayKey);
+  const chosenRows = chooseImportanceOutcomeRows(rows, predictedOnlyCheckbox.checked);
+
+  if (!chosenRows.length) {
+    content.innerHTML = `<p class="test-importance-empty">No ${dayKey === "day1" ? "Day 1" : "Day 2"} outcomes available yet. Run that prediction first.</p>`;
+    return;
+  }
+
+  const panels = chosenRows.map((row) => {
+    const outcomeName = row?.level || row?.treatment || "Outcome";
+    const importanceRows = generateDummyImportanceForOutcome({ outcomeName, dayKey });
+    const plotHtml = renderImportancePlotSvg(importanceRows);
+    const probability = Number(row?.mean_predicted_probability);
+    const probabilityText = Number.isFinite(probability) ? `${(probability * 100).toFixed(1)}%` : "n/a";
+    const predicted = row?.predicted_treatment_by_majority_vote ? "Predicted treatment" : "Not predicted";
+    return `
+      <section class="test-importance-outcome">
+        <h4>${outcomeName}</h4>
+        <p class="test-importance-meta">${dayKey === "day1" ? "Day 1" : "Day 2"} outcome • ${predicted} • averaged probability ${probabilityText} • dummy data</p>
+        ${plotHtml}
+      </section>
+    `;
+  }).join("");
+
+  content.innerHTML = panels;
 }
 
 function escapeCsvCell(value) {
@@ -745,6 +1456,7 @@ function downloadCsv(filename, csvText) {
 async function handleRunDay1() {
   try {
     if (!state.startupReady) throw new Error("APIs are not ready yet. Click 'Check API Status' first.");
+    await ensureWfazReadyForDay1();
     setLoading("day1", true);
     state.uniquePatientId = collectUniquePatientId();
     setPatientIdChips(state.uniquePatientId);
@@ -896,11 +1608,15 @@ async function runStartupWarmup() {
 }
 
 function init() {
+  injectLocalTestImportanceStyles();
+  void loadVariableImportanceData();
   renderDay1Form({
     "age.months": 24,
     sex: 0,
+    "weight.value": 10,
+    "weight.unit": 1,
     "adm.recent": 0,
-    wfaz: -1.1,
+    wfaz: "",
     cidysymp: 2,
     "not.alert": 0,
     "hr.all": 120,
@@ -920,10 +1636,13 @@ function init() {
   });
   byId("day1Form").addEventListener("input", (event) => {
     if (event.target?.id === "oxy.ra") clampNumberInputToBounds(event.target);
+    if (shouldTriggerWfazAutofill(event.target)) scheduleWfazAutofill();
   });
   byId("day1Form").addEventListener("change", (event) => {
     if (event.target?.id === "oxy.ra") clampNumberInputToBounds(event.target);
+    if (shouldTriggerWfazAutofill(event.target)) scheduleWfazAutofill();
   });
+  void calculateAndFillWfaz({ force: true });
 
   if (SKIP_STARTUP_WARMUP) {
     hideCard("warmupCard");

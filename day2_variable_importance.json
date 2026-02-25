@@ -1,0 +1,598 @@
+{
+  "version": "v1",
+  "metric": "averaged_variable_importance",
+  "ci_level": 0.95,
+  "day": "day2",
+  "outcomes": [
+    {
+      "outcome_key": "Mechanical ventilation, inotropes, or renal replacement therapy",
+      "outcome_label": "Mechanical ventilation, inotropes, or renal replacement therapy",
+      "variables": {
+        "1": {
+          "feature_key": "hr.all",
+          "feature_label": "hr.all",
+          "mean": 0.1083,
+          "ci_low": 0.0882,
+          "ci_high": 0.1283
+        },
+        "2": {
+          "feature_key": "age.months",
+          "feature_label": "age.months",
+          "mean": 0.0852,
+          "ci_low": 0.0665,
+          "ci_high": 0.1039
+        },
+        "3": {
+          "feature_key": "rr.all",
+          "feature_label": "rr.all",
+          "mean": 0.0787,
+          "ci_low": 0.0608,
+          "ci_high": 0.0965
+        },
+        "4": {
+          "feature_key": "oxy.ra",
+          "feature_label": "oxy.ra",
+          "mean": 0.0458,
+          "ci_low": 0.0342,
+          "ci_high": 0.0574
+        },
+        "5": {
+          "feature_key": "wfaz",
+          "feature_label": "wfaz",
+          "mean": 0.0369,
+          "ci_low": 0.0261,
+          "ci_high": 0.0478
+        },
+        "6": {
+          "feature_key": "cidysymp",
+          "feature_label": "cidysymp",
+          "mean": 0.0288,
+          "ci_low": 0.019,
+          "ci_high": 0.0386
+        },
+        "7": {
+          "feature_key": "envhtemp",
+          "feature_label": "envhtemp",
+          "mean": 0.0248,
+          "ci_low": 0.0159,
+          "ci_high": 0.0337
+        },
+        "8": {
+          "feature_key": "adm.recent",
+          "feature_label": "adm.recent",
+          "mean": 0.0171,
+          "ci_low": 0.0097,
+          "ci_high": 0.0245
+        },
+        "9": {
+          "feature_key": "sex",
+          "feature_label": "sex",
+          "mean": 0.0102,
+          "ci_low": 0.0054,
+          "ci_high": 0.0151
+        },
+        "10": {
+          "feature_key": "crt.long",
+          "feature_label": "crt.long",
+          "mean": 0.0097,
+          "ci_low": 0.0058,
+          "ci_high": 0.0136
+        },
+        "11": {
+          "feature_key": "not.alert",
+          "feature_label": "not.alert",
+          "mean": 0.0079,
+          "ci_low": 0.0048,
+          "ci_high": 0.0111
+        },
+        "12": {
+          "feature_key": "LEVEL2_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL2_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0028,
+          "ci_low": -0.0002,
+          "ci_high": 0.0058
+        },
+        "13": {
+          "feature_key": "LEVEL4_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL4_TREATMENTS_D1_SAFE_0",
+          "mean": 0.002,
+          "ci_low": 0.0001,
+          "ci_high": 0.0039
+        },
+        "14": {
+          "feature_key": "LEVEL1_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL1_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0017,
+          "ci_low": 0.0007,
+          "ci_high": 0.0028
+        },
+        "15": {
+          "feature_key": "LEVEL3_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL3_TREATMENTS_D1_SAFE_0",
+          "mean": 0.001,
+          "ci_low": -0.0003,
+          "ci_high": 0.0023
+        },
+        "16": {
+          "feature_key": "LEVEL5_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL5_TREATMENTS_D1_SAFE_0",
+          "mean": 0.001,
+          "ci_low": 0,
+          "ci_high": 0.0019
+        }
+      }
+    },
+    {
+      "outcome_key": "CPAP or IV fluid bolus",
+      "outcome_label": "CPAP or IV fluid bolus",
+      "variables": {
+        "1": {
+          "feature_key": "hr.all",
+          "feature_label": "hr.all",
+          "mean": 0.1294,
+          "ci_low": 0.1134,
+          "ci_high": 0.1454
+        },
+        "2": {
+          "feature_key": "age.months",
+          "feature_label": "age.months",
+          "mean": 0.1074,
+          "ci_low": 0.0914,
+          "ci_high": 0.1235
+        },
+        "3": {
+          "feature_key": "rr.all",
+          "feature_label": "rr.all",
+          "mean": 0.1065,
+          "ci_low": 0.0902,
+          "ci_high": 0.1228
+        },
+        "4": {
+          "feature_key": "envhtemp",
+          "feature_label": "envhtemp",
+          "mean": 0.0309,
+          "ci_low": 0.0235,
+          "ci_high": 0.0384
+        },
+        "5": {
+          "feature_key": "oxy.ra",
+          "feature_label": "oxy.ra",
+          "mean": 0.0252,
+          "ci_low": 0.0189,
+          "ci_high": 0.0314
+        },
+        "6": {
+          "feature_key": "wfaz",
+          "feature_label": "wfaz",
+          "mean": 0.0216,
+          "ci_low": 0.0158,
+          "ci_high": 0.0274
+        },
+        "7": {
+          "feature_key": "cidysymp",
+          "feature_label": "cidysymp",
+          "mean": 0.0136,
+          "ci_low": 0.0087,
+          "ci_high": 0.0185
+        },
+        "8": {
+          "feature_key": "sex",
+          "feature_label": "sex",
+          "mean": 0.0135,
+          "ci_low": 0.0079,
+          "ci_high": 0.019
+        },
+        "9": {
+          "feature_key": "adm.recent",
+          "feature_label": "adm.recent",
+          "mean": 0.0079,
+          "ci_low": 0.0049,
+          "ci_high": 0.0108
+        },
+        "10": {
+          "feature_key": "not.alert",
+          "feature_label": "not.alert",
+          "mean": 0.0045,
+          "ci_low": 0.0028,
+          "ci_high": 0.0063
+        },
+        "11": {
+          "feature_key": "crt.long",
+          "feature_label": "crt.long",
+          "mean": 0.0044,
+          "ci_low": 0.0027,
+          "ci_high": 0.0061
+        },
+        "12": {
+          "feature_key": "LEVEL5_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL5_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0026,
+          "ci_low": 0.0011,
+          "ci_high": 0.0041
+        },
+        "13": {
+          "feature_key": "LEVEL4_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL4_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0024,
+          "ci_low": 0.0011,
+          "ci_high": 0.0038
+        },
+        "14": {
+          "feature_key": "LEVEL1_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL1_TREATMENTS_D1_SAFE_0",
+          "mean": 0.002,
+          "ci_low": 0.0009,
+          "ci_high": 0.0031
+        },
+        "15": {
+          "feature_key": "LEVEL3_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL3_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0011,
+          "ci_low": 0.0004,
+          "ci_high": 0.0019
+        },
+        "16": {
+          "feature_key": "LEVEL2_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL2_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0011,
+          "ci_low": 0.0005,
+          "ci_high": 0.0016
+        }
+      }
+    },
+    {
+      "outcome_key": "ICU admission",
+      "outcome_label": "ICU admission",
+      "variables": {
+        "1": {
+          "feature_key": "rr.all",
+          "feature_label": "rr.all",
+          "mean": 0.1082,
+          "ci_low": 0.0953,
+          "ci_high": 0.1212
+        },
+        "2": {
+          "feature_key": "age.months",
+          "feature_label": "age.months",
+          "mean": 0.0623,
+          "ci_low": 0.0523,
+          "ci_high": 0.0722
+        },
+        "3": {
+          "feature_key": "hr.all",
+          "feature_label": "hr.all",
+          "mean": 0.0507,
+          "ci_low": 0.0441,
+          "ci_high": 0.0574
+        },
+        "4": {
+          "feature_key": "wfaz",
+          "feature_label": "wfaz",
+          "mean": 0.0337,
+          "ci_low": 0.0283,
+          "ci_high": 0.039
+        },
+        "5": {
+          "feature_key": "not.alert",
+          "feature_label": "not.alert",
+          "mean": 0.0308,
+          "ci_low": 0.0265,
+          "ci_high": 0.035
+        },
+        "6": {
+          "feature_key": "cidysymp",
+          "feature_label": "cidysymp",
+          "mean": 0.0177,
+          "ci_low": 0.0144,
+          "ci_high": 0.0211
+        },
+        "7": {
+          "feature_key": "oxy.ra",
+          "feature_label": "oxy.ra",
+          "mean": 0.0147,
+          "ci_low": 0.0105,
+          "ci_high": 0.019
+        },
+        "8": {
+          "feature_key": "envhtemp",
+          "feature_label": "envhtemp",
+          "mean": 0.0102,
+          "ci_low": 0.0074,
+          "ci_high": 0.013
+        },
+        "9": {
+          "feature_key": "crt.long",
+          "feature_label": "crt.long",
+          "mean": 0.0097,
+          "ci_low": 0.0071,
+          "ci_high": 0.0123
+        },
+        "10": {
+          "feature_key": "LEVEL1_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL1_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0084,
+          "ci_low": 0.0063,
+          "ci_high": 0.0105
+        },
+        "11": {
+          "feature_key": "LEVEL5_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL5_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0027,
+          "ci_low": 0.0019,
+          "ci_high": 0.0036
+        },
+        "12": {
+          "feature_key": "LEVEL2_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL2_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0027,
+          "ci_low": 0.0018,
+          "ci_high": 0.0036
+        },
+        "13": {
+          "feature_key": "adm.recent",
+          "feature_label": "adm.recent",
+          "mean": 0.0021,
+          "ci_low": 0.0013,
+          "ci_high": 0.0029
+        },
+        "14": {
+          "feature_key": "sex",
+          "feature_label": "sex",
+          "mean": 0.0018,
+          "ci_low": 0.0011,
+          "ci_high": 0.0024
+        },
+        "15": {
+          "feature_key": "LEVEL3_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL3_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0012,
+          "ci_low": 0.0006,
+          "ci_high": 0.0019
+        },
+        "16": {
+          "feature_key": "LEVEL4_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL4_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0012,
+          "ci_low": 0.0006,
+          "ci_high": 0.0018
+        }
+      }
+    },
+    {
+      "outcome_key": "O2 via face mask or nasal cannula",
+      "outcome_label": "O2 via face mask or nasal cannula",
+      "variables": {
+        "1": {
+          "feature_key": "rr.all",
+          "feature_label": "rr.all",
+          "mean": 0.1199,
+          "ci_low": 0.1074,
+          "ci_high": 0.1324
+        },
+        "2": {
+          "feature_key": "oxy.ra",
+          "feature_label": "oxy.ra",
+          "mean": 0.1039,
+          "ci_low": 0.0971,
+          "ci_high": 0.1107
+        },
+        "3": {
+          "feature_key": "age.months",
+          "feature_label": "age.months",
+          "mean": 0.0421,
+          "ci_low": 0.0326,
+          "ci_high": 0.0517
+        },
+        "4": {
+          "feature_key": "wfaz",
+          "feature_label": "wfaz",
+          "mean": 0.0334,
+          "ci_low": 0.0271,
+          "ci_high": 0.0398
+        },
+        "5": {
+          "feature_key": "not.alert",
+          "feature_label": "not.alert",
+          "mean": 0.0205,
+          "ci_low": 0.0175,
+          "ci_high": 0.0235
+        },
+        "6": {
+          "feature_key": "hr.all",
+          "feature_label": "hr.all",
+          "mean": 0.0194,
+          "ci_low": 0.0145,
+          "ci_high": 0.0243
+        },
+        "7": {
+          "feature_key": "cidysymp",
+          "feature_label": "cidysymp",
+          "mean": 0.0141,
+          "ci_low": 0.0106,
+          "ci_high": 0.0177
+        },
+        "8": {
+          "feature_key": "LEVEL2_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL2_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0105,
+          "ci_low": 0.0083,
+          "ci_high": 0.0126
+        },
+        "9": {
+          "feature_key": "envhtemp",
+          "feature_label": "envhtemp",
+          "mean": 0.0102,
+          "ci_low": 0.0075,
+          "ci_high": 0.0129
+        },
+        "10": {
+          "feature_key": "LEVEL4_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL4_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0075,
+          "ci_low": 0.005,
+          "ci_high": 0.01
+        },
+        "11": {
+          "feature_key": "LEVEL3_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL3_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0053,
+          "ci_low": 0.0036,
+          "ci_high": 0.007
+        },
+        "12": {
+          "feature_key": "crt.long",
+          "feature_label": "crt.long",
+          "mean": 0.0038,
+          "ci_low": 0.0023,
+          "ci_high": 0.0053
+        },
+        "13": {
+          "feature_key": "LEVEL1_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL1_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0023,
+          "ci_low": 0.0014,
+          "ci_high": 0.0032
+        },
+        "14": {
+          "feature_key": "adm.recent",
+          "feature_label": "adm.recent",
+          "mean": 0.0021,
+          "ci_low": 0.0013,
+          "ci_high": 0.0029
+        },
+        "15": {
+          "feature_key": "LEVEL5_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL5_TREATMENTS_D1_SAFE_0",
+          "mean": 0.002,
+          "ci_low": 0.0013,
+          "ci_high": 0.0027
+        },
+        "16": {
+          "feature_key": "sex",
+          "feature_label": "sex",
+          "mean": 0.0018,
+          "ci_low": 0.0012,
+          "ci_high": 0.0025
+        }
+      }
+    },
+    {
+      "outcome_key": "Non-bolused IV fluids",
+      "outcome_label": "Non-bolused IV fluids",
+      "variables": {
+        "1": {
+          "feature_key": "hr.all",
+          "feature_label": "hr.all",
+          "mean": 0.0588,
+          "ci_low": 0.0513,
+          "ci_high": 0.0664
+        },
+        "2": {
+          "feature_key": "wfaz",
+          "feature_label": "wfaz",
+          "mean": 0.0389,
+          "ci_low": 0.0331,
+          "ci_high": 0.0448
+        },
+        "3": {
+          "feature_key": "age.months",
+          "feature_label": "age.months",
+          "mean": 0.0309,
+          "ci_low": 0.0234,
+          "ci_high": 0.0384
+        },
+        "4": {
+          "feature_key": "envhtemp",
+          "feature_label": "envhtemp",
+          "mean": 0.024,
+          "ci_low": 0.019,
+          "ci_high": 0.0291
+        },
+        "5": {
+          "feature_key": "rr.all",
+          "feature_label": "rr.all",
+          "mean": 0.0225,
+          "ci_low": 0.0174,
+          "ci_high": 0.0275
+        },
+        "6": {
+          "feature_key": "cidysymp",
+          "feature_label": "cidysymp",
+          "mean": 0.0104,
+          "ci_low": 0.0083,
+          "ci_high": 0.0124
+        },
+        "7": {
+          "feature_key": "crt.long",
+          "feature_label": "crt.long",
+          "mean": 0.0079,
+          "ci_low": 0.0064,
+          "ci_high": 0.0094
+        },
+        "8": {
+          "feature_key": "oxy.ra",
+          "feature_label": "oxy.ra",
+          "mean": 0.0064,
+          "ci_low": 0.0047,
+          "ci_high": 0.0081
+        },
+        "9": {
+          "feature_key": "not.alert",
+          "feature_label": "not.alert",
+          "mean": 0.0048,
+          "ci_low": 0.0038,
+          "ci_high": 0.0058
+        },
+        "10": {
+          "feature_key": "adm.recent",
+          "feature_label": "adm.recent",
+          "mean": 0.0042,
+          "ci_low": 0.0027,
+          "ci_high": 0.0056
+        },
+        "11": {
+          "feature_key": "sex",
+          "feature_label": "sex",
+          "mean": 0.0033,
+          "ci_low": 0.0016,
+          "ci_high": 0.0049
+        },
+        "12": {
+          "feature_key": "LEVEL4_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL4_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0019,
+          "ci_low": 0.0012,
+          "ci_high": 0.0025
+        },
+        "13": {
+          "feature_key": "LEVEL2_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL2_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0017,
+          "ci_low": 0.0011,
+          "ci_high": 0.0023
+        },
+        "14": {
+          "feature_key": "LEVEL3_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL3_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0014,
+          "ci_low": 0.0009,
+          "ci_high": 0.0019
+        },
+        "15": {
+          "feature_key": "LEVEL5_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL5_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0008,
+          "ci_low": 0.0005,
+          "ci_high": 0.0012
+        },
+        "16": {
+          "feature_key": "LEVEL1_TREATMENTS_D1_SAFE_0",
+          "feature_label": "LEVEL1_TREATMENTS_D1_SAFE_0",
+          "mean": 0.0004,
+          "ci_low": 0.0003,
+          "ci_high": 0.0006
+        }
+      }
+    }
+  ]
+}

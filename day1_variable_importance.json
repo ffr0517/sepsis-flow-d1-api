@@ -1,0 +1,423 @@
+{
+  "version": "v1",
+  "metric": "averaged_variable_importance",
+  "ci_level": 0.95,
+  "day": "day1",
+  "outcomes": [
+    {
+      "outcome_key": "Mechanical ventilation, inotropes, or renal replacement therapy",
+      "outcome_label": "Mechanical ventilation, inotropes, or renal replacement therapy",
+      "variables": {
+        "1": {
+          "feature_key": "age.months",
+          "feature_label": "age.months",
+          "mean": 0.0833,
+          "ci_low": 0.063,
+          "ci_high": 0.1035
+        },
+        "2": {
+          "feature_key": "rr.all",
+          "feature_label": "rr.all",
+          "mean": 0.0623,
+          "ci_low": 0.0462,
+          "ci_high": 0.0783
+        },
+        "3": {
+          "feature_key": "hr.all",
+          "feature_label": "hr.all",
+          "mean": 0.0481,
+          "ci_low": 0.0334,
+          "ci_high": 0.0629
+        },
+        "4": {
+          "feature_key": "oxy.ra",
+          "feature_label": "oxy.ra",
+          "mean": 0.0387,
+          "ci_low": 0.0268,
+          "ci_high": 0.0506
+        },
+        "5": {
+          "feature_key": "wfaz",
+          "feature_label": "wfaz",
+          "mean": 0.03,
+          "ci_low": 0.0189,
+          "ci_high": 0.0411
+        },
+        "6": {
+          "feature_key": "cidysymp",
+          "feature_label": "cidysymp",
+          "mean": 0.0286,
+          "ci_low": 0.0176,
+          "ci_high": 0.0396
+        },
+        "7": {
+          "feature_key": "envhtemp",
+          "feature_label": "envhtemp",
+          "mean": 0.0145,
+          "ci_low": 0.0075,
+          "ci_high": 0.0216
+        },
+        "8": {
+          "feature_key": "adm.recent",
+          "feature_label": "adm.recent",
+          "mean": 0.0065,
+          "ci_low": 0.0031,
+          "ci_high": 0.0099
+        },
+        "9": {
+          "feature_key": "not.alert",
+          "feature_label": "not.alert",
+          "mean": 0.0063,
+          "ci_low": 0.0028,
+          "ci_high": 0.0097
+        },
+        "10": {
+          "feature_key": "crt.long",
+          "feature_label": "crt.long",
+          "mean": 0.0024,
+          "ci_low": 0.0007,
+          "ci_high": 0.0041
+        },
+        "11": {
+          "feature_key": "sex",
+          "feature_label": "sex",
+          "mean": 0.0017,
+          "ci_low": 0.0002,
+          "ci_high": 0.0032
+        }
+      }
+    },
+    {
+      "outcome_key": "CPAP or IV fluid bolus",
+      "outcome_label": "CPAP or IV fluid bolus",
+      "variables": {
+        "1": {
+          "feature_key": "hr.all",
+          "feature_label": "hr.all",
+          "mean": 0.0932,
+          "ci_low": 0.0836,
+          "ci_high": 0.1027
+        },
+        "2": {
+          "feature_key": "rr.all",
+          "feature_label": "rr.all",
+          "mean": 0.0886,
+          "ci_low": 0.0776,
+          "ci_high": 0.0997
+        },
+        "3": {
+          "feature_key": "crt.long",
+          "feature_label": "crt.long",
+          "mean": 0.0403,
+          "ci_low": 0.0339,
+          "ci_high": 0.0467
+        },
+        "4": {
+          "feature_key": "age.months",
+          "feature_label": "age.months",
+          "mean": 0.0187,
+          "ci_low": 0.0141,
+          "ci_high": 0.0232
+        },
+        "5": {
+          "feature_key": "wfaz",
+          "feature_label": "wfaz",
+          "mean": 0.0172,
+          "ci_low": 0.0125,
+          "ci_high": 0.0218
+        },
+        "6": {
+          "feature_key": "oxy.ra",
+          "feature_label": "oxy.ra",
+          "mean": 0.0167,
+          "ci_low": 0.0128,
+          "ci_high": 0.0206
+        },
+        "7": {
+          "feature_key": "not.alert",
+          "feature_label": "not.alert",
+          "mean": 0.0107,
+          "ci_low": 0.0083,
+          "ci_high": 0.0132
+        },
+        "8": {
+          "feature_key": "envhtemp",
+          "feature_label": "envhtemp",
+          "mean": 0.0065,
+          "ci_low": 0.0044,
+          "ci_high": 0.0086
+        },
+        "9": {
+          "feature_key": "cidysymp",
+          "feature_label": "cidysymp",
+          "mean": 0.0059,
+          "ci_low": 0.0042,
+          "ci_high": 0.0076
+        },
+        "10": {
+          "feature_key": "sex",
+          "feature_label": "sex",
+          "mean": 0.0029,
+          "ci_low": 0.0016,
+          "ci_high": 0.0042
+        },
+        "11": {
+          "feature_key": "adm.recent",
+          "feature_label": "adm.recent",
+          "mean": 0.0012,
+          "ci_low": 0.0006,
+          "ci_high": 0.0018
+        }
+      }
+    },
+    {
+      "outcome_key": "ICU admission",
+      "outcome_label": "ICU admission",
+      "variables": {
+        "1": {
+          "feature_key": "rr.all",
+          "feature_label": "rr.all",
+          "mean": 0.1289,
+          "ci_low": 0.1195,
+          "ci_high": 0.1384
+        },
+        "2": {
+          "feature_key": "not.alert",
+          "feature_label": "not.alert",
+          "mean": 0.0299,
+          "ci_low": 0.026,
+          "ci_high": 0.0339
+        },
+        "3": {
+          "feature_key": "wfaz",
+          "feature_label": "wfaz",
+          "mean": 0.0268,
+          "ci_low": 0.0223,
+          "ci_high": 0.0313
+        },
+        "4": {
+          "feature_key": "hr.all",
+          "feature_label": "hr.all",
+          "mean": 0.0258,
+          "ci_low": 0.0216,
+          "ci_high": 0.03
+        },
+        "5": {
+          "feature_key": "age.months",
+          "feature_label": "age.months",
+          "mean": 0.0222,
+          "ci_low": 0.0175,
+          "ci_high": 0.0269
+        },
+        "6": {
+          "feature_key": "crt.long",
+          "feature_label": "crt.long",
+          "mean": 0.0183,
+          "ci_low": 0.0141,
+          "ci_high": 0.0225
+        },
+        "7": {
+          "feature_key": "envhtemp",
+          "feature_label": "envhtemp",
+          "mean": 0.0179,
+          "ci_low": 0.015,
+          "ci_high": 0.0209
+        },
+        "8": {
+          "feature_key": "oxy.ra",
+          "feature_label": "oxy.ra",
+          "mean": 0.0067,
+          "ci_low": 0.0047,
+          "ci_high": 0.0087
+        },
+        "9": {
+          "feature_key": "cidysymp",
+          "feature_label": "cidysymp",
+          "mean": 0.0045,
+          "ci_low": 0.0031,
+          "ci_high": 0.0059
+        },
+        "10": {
+          "feature_key": "sex",
+          "feature_label": "sex",
+          "mean": 0.001,
+          "ci_low": 0.0006,
+          "ci_high": 0.0013
+        },
+        "11": {
+          "feature_key": "adm.recent",
+          "feature_label": "adm.recent",
+          "mean": 0.0008,
+          "ci_low": 0.0004,
+          "ci_high": 0.0012
+        }
+      }
+    },
+    {
+      "outcome_key": "O2 via face mask or nasal cannula",
+      "outcome_label": "O2 via face mask or nasal cannula",
+      "variables": {
+        "1": {
+          "feature_key": "rr.all",
+          "feature_label": "rr.all",
+          "mean": 0.1258,
+          "ci_low": 0.1186,
+          "ci_high": 0.1329
+        },
+        "2": {
+          "feature_key": "oxy.ra",
+          "feature_label": "oxy.ra",
+          "mean": 0.0968,
+          "ci_low": 0.0918,
+          "ci_high": 0.1017
+        },
+        "3": {
+          "feature_key": "not.alert",
+          "feature_label": "not.alert",
+          "mean": 0.0528,
+          "ci_low": 0.0492,
+          "ci_high": 0.0564
+        },
+        "4": {
+          "feature_key": "hr.all",
+          "feature_label": "hr.all",
+          "mean": 0.0135,
+          "ci_low": 0.0114,
+          "ci_high": 0.0157
+        },
+        "5": {
+          "feature_key": "cidysymp",
+          "feature_label": "cidysymp",
+          "mean": 0.0079,
+          "ci_low": 0.006,
+          "ci_high": 0.0098
+        },
+        "6": {
+          "feature_key": "age.months",
+          "feature_label": "age.months",
+          "mean": 0.0073,
+          "ci_low": 0.0056,
+          "ci_high": 0.0089
+        },
+        "7": {
+          "feature_key": "wfaz",
+          "feature_label": "wfaz",
+          "mean": 0.0054,
+          "ci_low": 0.004,
+          "ci_high": 0.0069
+        },
+        "8": {
+          "feature_key": "envhtemp",
+          "feature_label": "envhtemp",
+          "mean": 0.004,
+          "ci_low": 0.0027,
+          "ci_high": 0.0053
+        },
+        "9": {
+          "feature_key": "crt.long",
+          "feature_label": "crt.long",
+          "mean": 0.0017,
+          "ci_low": 0.0011,
+          "ci_high": 0.0022
+        },
+        "10": {
+          "feature_key": "sex",
+          "feature_label": "sex",
+          "mean": 0.0008,
+          "ci_low": 0.0005,
+          "ci_high": 0.0011
+        },
+        "11": {
+          "feature_key": "adm.recent",
+          "feature_label": "adm.recent",
+          "mean": 0.0006,
+          "ci_low": 0.0002,
+          "ci_high": 0.0011
+        }
+      }
+    },
+    {
+      "outcome_key": "Non-bolused IV fluids",
+      "outcome_label": "Non-bolused IV fluids",
+      "variables": {
+        "1": {
+          "feature_key": "oxy.ra",
+          "feature_label": "oxy.ra",
+          "mean": 0.044,
+          "ci_low": 0.0401,
+          "ci_high": 0.0478
+        },
+        "2": {
+          "feature_key": "rr.all",
+          "feature_label": "rr.all",
+          "mean": 0.024,
+          "ci_low": 0.0203,
+          "ci_high": 0.0277
+        },
+        "3": {
+          "feature_key": "hr.all",
+          "feature_label": "hr.all",
+          "mean": 0.0137,
+          "ci_low": 0.0115,
+          "ci_high": 0.0159
+        },
+        "4": {
+          "feature_key": "age.months",
+          "feature_label": "age.months",
+          "mean": 0.0116,
+          "ci_low": 0.0094,
+          "ci_high": 0.0138
+        },
+        "5": {
+          "feature_key": "not.alert",
+          "feature_label": "not.alert",
+          "mean": 0.0088,
+          "ci_low": 0.0075,
+          "ci_high": 0.0102
+        },
+        "6": {
+          "feature_key": "envhtemp",
+          "feature_label": "envhtemp",
+          "mean": 0.0075,
+          "ci_low": 0.006,
+          "ci_high": 0.009
+        },
+        "7": {
+          "feature_key": "wfaz",
+          "feature_label": "wfaz",
+          "mean": 0.007,
+          "ci_low": 0.0053,
+          "ci_high": 0.0087
+        },
+        "8": {
+          "feature_key": "cidysymp",
+          "feature_label": "cidysymp",
+          "mean": 0.0063,
+          "ci_low": 0.0049,
+          "ci_high": 0.0078
+        },
+        "9": {
+          "feature_key": "crt.long",
+          "feature_label": "crt.long",
+          "mean": 0.0033,
+          "ci_low": 0.0025,
+          "ci_high": 0.0041
+        },
+        "10": {
+          "feature_key": "adm.recent",
+          "feature_label": "adm.recent",
+          "mean": 0.0029,
+          "ci_low": 0.0022,
+          "ci_high": 0.0036
+        },
+        "11": {
+          "feature_key": "sex",
+          "feature_label": "sex",
+          "mean": 0.0007,
+          "ci_low": 0.0004,
+          "ci_high": 0.001
+        }
+      }
+    }
+  ]
+}
