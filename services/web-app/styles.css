@@ -30,6 +30,19 @@ body {
   gap: 16px;
 }
 
+.local-page-brand {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: -4px;
+}
+
+.local-page-brand-logo {
+  display: block;
+  width: min(42vw, 340px);
+  max-width: 100%;
+  height: auto;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -55,6 +68,25 @@ body {
   font-size: clamp(1.55rem, 2.5vw, 2.2rem);
 }
 
+.hero-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.hero-banner-logo {
+  display: block;
+  width: min(100%, 520px);
+  height: auto;
+}
+
+.hero-banner-logo-top {
+  width: min(44%, 360px);
+  flex: 0 1 360px;
+}
+
 .eyebrow {
   margin: 0;
   color: var(--primary);
@@ -62,6 +94,7 @@ body {
   letter-spacing: 0.09em;
   text-transform: uppercase;
   font-size: 0.76rem;
+  flex: 1 1 auto;
 }
 
 .subtitle {
@@ -123,6 +156,10 @@ code {
 }
 
 .prior-form {
+  margin-top: 10px;
+}
+
+.prior-form + .collapsible-panel {
   margin-top: 10px;
 }
 
@@ -221,6 +258,22 @@ code {
   display: flex;
   justify-content: flex-end;
   margin-top: 14px;
+}
+
+@media (max-width: 700px) {
+  .hero-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .hero-banner-logo-top {
+    width: min(100%, 420px);
+    flex-basis: auto;
+  }
+
+  .local-page-brand-logo {
+    width: min(78vw, 320px);
+  }
 }
 
 .btn {

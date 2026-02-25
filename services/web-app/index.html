@@ -5,16 +5,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sepsis Flow | Two-Day Treatment Prediction</title>
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png" />
+  <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 
 <body>
   <main class="app-shell">
+    <div class="local-page-brand">
+      <img class="local-page-brand-logo" src="./banner-logo.png"
+        alt="Sepsis Flow: Sequential Triage Support for Paediatric Febrile Illness" />
+    </div>
     <section class="hero card">
-      <p class="eyebrow">DEVELOPED USING DATA FROM THE <a
-          href="https://www.thelancet.com/journals/lanchi/article/PIIS2352-4642%2825%2900183-X/fulltext" target="_blank"
-          rel="noopener noreferrer">SPOT SEPSIS STUDY</a></p>
-      <h1>Sequential Triage Support for Paediatric Febrile Illness</h1>
+      <div class="hero-top">
+        <p class="eyebrow">DEVELOPED USING DATA FROM THE <a
+            href="https://www.thelancet.com/journals/lanchi/article/PIIS2352-4642%2825%2900183-X/fulltext" target="_blank"
+            rel="noopener noreferrer">SPOT SEPSIS STUDY</a></p>
+      </div>
       <p class="subtitle">
         Uses baseline clinical presentation to estimate the probability of five treatment-intensity levels across the
         first 48 hours of care.
@@ -47,8 +57,15 @@
         <h2>Baseline Presenting Clinical Features (Day 0)</h2>
         <span class="chip">Required Fields</span>
       </div>
+      <div class="grid-form prior-form">
+        <div class="field">
+          <label for="uniquePatientId">Unique Patient ID (optional)</label>
+          <input id="uniquePatientId" name="uniquePatientId" type="text" autocomplete="off"
+            placeholder="e.g. CAMB-00123" />
+        </div>
+      </div>
       <details id="priorAdjustmentsPanel" class="collapsible-panel">
-        <summary>Prevalence Adjustment (Optional)</summary>
+        <summary>Optional: Country and Inpatient Status Prevalence Adjustment</summary>
         <p class="hint">Leave both fields unset to use default 50/50 (non-adjusted) predictions.
           This default averaged probability shown by the model is an evidence score from a balanced 50/50 training
           world: it answers “if cases and non-cases were equally likely, do this child’s features look more like a case
@@ -100,6 +117,7 @@
       <div class="section-header">
         <h2>Day 1 Treatment Predictions</h2>
         <span class="chip chip-ok">Complete</span>
+        <span id="day1PatientIdChip" class="chip hidden"></span>
       </div>
       <div id="day1Results"></div>
     </section>
@@ -119,6 +137,7 @@
       <div class="section-header">
         <h2>Day 2 Treatment Predictions</h2>
         <span class="chip chip-ok">Complete</span>
+        <span id="day2PatientIdChip" class="chip hidden"></span>
       </div>
       <div id="day2Results"></div>
     </section>

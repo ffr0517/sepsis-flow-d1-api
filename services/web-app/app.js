@@ -114,6 +114,7 @@ const state = {
   day1Response: null,
   day2Response: null,
   priorAdjustments: null,
+  uniquePatientId: "",
   startupReady: false,
   startupWarming: false,
   loading: {
@@ -344,6 +345,21 @@ function collectOptionalStrata() {
   return strata;
 }
 
+function collectUniquePatientId() {
+  const value = (byId("uniquePatientId")?.value || "").trim();
+  return value;
+}
+
+function setPatientIdChips(patientId = "") {
+  const text = patientId ? `Unique Patient ID: ${patientId}` : "";
+  ["day1PatientIdChip", "day2PatientIdChip"].forEach((id) => {
+    const el = byId(id);
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle("hidden", !text);
+  });
+}
+
 function withOptionalStrata(payload, strata) {
   if (!strata || Object.keys(strata).length === 0) return payload;
   return { ...payload, strata };
@@ -351,9 +367,20 @@ function withOptionalStrata(payload, strata) {
 
 function strataSummaryText(strata) {
   if (!strata || Object.keys(strata).length === 0) return "standard 50/50 priors";
-  const country = strata.country ? `country=${strata.country}` : null;
-  const inpatient = strata.inpatient_status ? `inpatient_status=${strata.inpatient_status}` : null;
-  return [country, inpatient].filter(Boolean).join(", ");
+  const hasCountry = hasValue(strata.country);
+  const hasInpatientStatus = hasValue(strata.inpatient_status);
+
+  if (hasCountry && hasInpatientStatus) {
+    return "including country and inpatient status prevalence adjustment";
+  }
+  if (hasCountry) {
+    return "including country prevalence adjustment";
+  }
+  if (hasInpatientStatus) {
+    return "including inpatient status prevalence adjustment";
+  }
+
+  return "standard 50/50 priors";
 }
 
 function asPercent(value) {
@@ -370,6 +397,7 @@ function formatPredictionRow(row) {
   return {
     treatment: row.level ?? "",
     avgPredictedProbabilityPct: asPercent(row.mean_predicted_probability),
+    baseThresholdPct: asPercent(row.t_50_50),
     adjustedPredictedProbabilityPct: asPercent(row.p_adj),
     adjustedThresholdPct: asPercent(row.t_adj),
     prevalencePct: asPercent(row.prevalence),
@@ -379,6 +407,59 @@ function formatPredictionRow(row) {
     votesAboveThresholdPct: asPercent(row.votes_above_threshold),
     overallTreatmentPrediction: row.predicted_treatment_by_majority_vote ? "Yes" : "No"
   };
+}
+
+function displayMetaForRow(row) {
+  const hasAdjustedProbability = hasValue(row.adjustedPredictedProbabilityPct);
+  const displayProbabilityPct = hasAdjustedProbability ? row.adjustedPredictedProbabilityPct : row.avgPredictedProbabilityPct;
+  const displayThresholdPct = hasAdjustedProbability ? row.adjustedThresholdPct : row.baseThresholdPct;
+  const modeShort = hasAdjustedProbability ? "Adjusted priors" : "Standard priors";
+  const probabilityLabel = hasAdjustedProbability ? "Averaged adjusted probability" : "Averaged probability";
+
+  return {
+    hasAdjustedProbability,
+    displayProbabilityPct,
+    displayThresholdPct,
+    modeShort,
+    probabilityLabel
+  };
+}
+
+function renderMetricsLine(row) {
+  const meta = displayMetaForRow(row);
+  const parts = [];
+  if (hasValue(meta.displayThresholdPct)) parts.push(`Threshold used: ${meta.displayThresholdPct}%`);
+  parts.push(`Voters exceeding threshold: ${row.votersExceedingThreshold}`);
+  parts.push(`Votes above threshold: ${row.votesAboveThresholdPct}%`);
+  return `<div class="muted small">${parts.join(" • ")}</div>`;
+}
+
+function formatPriorSelectionLabel(strata) {
+  const country = hasValue(strata?.country) ? String(strata.country).trim() : "";
+  const inpatientStatusRaw = hasValue(strata?.inpatient_status) ? String(strata.inpatient_status).trim() : "";
+  const inpatientStatus = inpatientStatusRaw ? inpatientStatusRaw.toLowerCase() : "";
+
+  if (country && inpatientStatus) return `${inpatientStatus} at site in ${country}`;
+  if (country) return `site in ${country}`;
+  if (inpatientStatus) return `${inpatientStatus} setting`;
+  return "none (standard 50/50 priors)";
+}
+
+function renderPriorSelectionSummary(rows, priorAdjustments) {
+  const strata = priorAdjustments && typeof priorAdjustments === "object" ? priorAdjustments : {};
+  const hasSelectedPriors = Object.keys(strata).length > 0;
+  const hasAdjustedRows = rows.some((row) => displayMetaForRow(row).hasAdjustedProbability);
+  const priorLabel = formatPriorSelectionLabel(strata);
+
+  if (!hasSelectedPriors) {
+    return `<div class="topline-summary muted"><strong>Priors selected:</strong> none (standard 50/50 priors). Results shown with standard thresholds/probabilities.</div>`;
+  }
+
+  const suffix = hasAdjustedRows
+    ? "Results shown with prevalence-adjusted thresholds/probabilities."
+    : "Selected priors were sent; adjusted values were not returned by the API.";
+
+  return `<div class="topline-summary muted"><strong>Priors selected:</strong> ${priorLabel}. ${suffix}</div>`;
 }
 
 
@@ -391,23 +472,21 @@ function confidenceClassFromPct(pctStr) {
 }
 
 function renderHeroCard(row) {
-  const pct = Number(String(row.avgPredictedProbabilityPct).replace(/[^0-9.-]/g, "")) || 0;
-  const pctDisplay = row.avgPredictedProbabilityPct === "" ? "—" : `${row.avgPredictedProbabilityPct}%`;
-  const confClass = confidenceClassFromPct(row.avgPredictedProbabilityPct);
-  // show adjusted lines if they exist
-  const adjustedLines = row.adjustedPredictedProbabilityPct || row.adjustedThresholdPct || row.prevalencePct
-    ? `<div class="hero-adjusted">
-         ${row.adjustedPredictedProbabilityPct ? `<div><strong>Adjusted:</strong> ${row.adjustedPredictedProbabilityPct}% (threshold: ${row.adjustedThresholdPct}%)</div>` : ""}
-         ${row.prevalencePct ? `<div><strong>Prevalence:</strong> ${row.prevalencePct}%</div>` : ""}
-       </div>`
-    : "";
+  const meta = displayMetaForRow(row);
+  const pct = Number(String(meta.displayProbabilityPct).replace(/[^0-9.-]/g, "")) || 0;
+  const pctDisplay = meta.displayProbabilityPct === "" ? "—" : `${meta.displayProbabilityPct}%`;
+  const confClass = confidenceClassFromPct(meta.displayProbabilityPct);
 
   return `
     <article class="treatment-hero ${confClass}">
       <div class="hero-left">
         <h3 class="hero-title">${row.treatment}</h3>
-        ${adjustedLines}
+        <div class="hero-adjusted">
+          <div><strong>${meta.probabilityLabel}:</strong> ${pctDisplay}</div>
+        </div>
         <div class="hero-support">
+          <span class="muted small">Threshold used: ${hasValue(meta.displayThresholdPct) ? `${meta.displayThresholdPct}%` : "—"}</span>
+          <span class="muted small">•</span>
           <span class="muted small">Voters exceeding threshold: ${row.votersExceedingThreshold}</span>
           <span class="muted small">•</span>
           <span class="muted small">Votes above threshold: ${row.votesAboveThresholdPct}%</span>
@@ -416,7 +495,9 @@ function renderHeroCard(row) {
 
       <div class="hero-right">
         <div class="decision-badge decision-yes">Predicted Treatment</div>
+        <div class="muted small">${meta.modeShort}</div>
         <div class="prob-number">${pctDisplay}</div>
+        <div class="muted small">${meta.probabilityLabel}</div>
         <div class="prob-bar" aria-hidden="true">
           <div class="prob-fill" style="width: ${Math.min(100, pct)}%"></div>
         </div>
@@ -426,15 +507,18 @@ function renderHeroCard(row) {
 }
 
 function renderCompactRow(row) {
-  const pctDisplay = row.avgPredictedProbabilityPct === "" ? "—" : `${row.avgPredictedProbabilityPct}%`;
+  const meta = displayMetaForRow(row);
+  const pctDisplay = meta.displayProbabilityPct === "" ? "—" : `${meta.displayProbabilityPct}%`;
   return `
     <div class="compact-row ${row.overallTreatmentPrediction === "Yes" ? "compact-row-yes" : ""}">
       <div class="compact-left">
         <div class="compact-title">${row.treatment}</div>
-        <div class="muted small">Voters: ${row.votersExceedingThreshold} • Votes above threshold: ${row.votesAboveThresholdPct}%</div>
+        <div class="muted small">${meta.probabilityLabel}: ${pctDisplay}</div>
+        ${renderMetricsLine(row)}
       </div>
       <div class="compact-right">
         <div class="compact-prob">${pctDisplay}</div>
+        <div class="muted small">${meta.modeShort}</div>
         <div class="compact-decision">${row.overallTreatmentPrediction}</div>
       </div>
     </div>
@@ -443,9 +527,10 @@ function renderCompactRow(row) {
 
 
 
-function tableFromRows(rows) {
+function tableFromRows(rows, priorAdjustments = null) {
   if (!Array.isArray(rows) || rows.length === 0) return "<p class='hint'>No rows returned.</p>";
   const formatted = rows.map(formatPredictionRow);
+  const priorSummaryHtml = renderPriorSelectionSummary(formatted, priorAdjustments);
 
   // pull priority predicted treatments and promote to big panel
   const recommended = formatted.filter((r) => r.overallTreatmentPrediction === "Yes");
@@ -475,7 +560,7 @@ function tableFromRows(rows) {
     </section>
   `;
 
-  return `${heroHtml}${compactSupportHtml}${summaryCardsFromRows(formatted)}`;
+  return `${priorSummaryHtml}${heroHtml}${compactSupportHtml}${summaryCardsFromRows(formatted)}`;
 
   return `${heroHtml}${compactSupportHtml}${summaryCardsFromRows(formatted)}`;
 }
@@ -487,7 +572,8 @@ function summaryCardsFromRows(rows) {
   }
 
   const top = recommended[0];
-  const topPct = top.avgPredictedProbabilityPct || "—";
+  const topMeta = displayMetaForRow(top);
+  const topPct = topMeta.displayProbabilityPct || "—";
   return `<div class="topline-summary">
     <strong>${recommended.length} predicted treatment${recommended.length > 1 ? "s" : ""}:</strong>
     <span class="muted"> ${top.treatment} — ${topPct}%</span>
@@ -587,13 +673,13 @@ function summarizeWarmupError(err) {
 
 function renderDay1Results(envelope) {
   const rows = envelope?.data?.day1_result || [];
-  byId("day1Results").innerHTML = tableFromRows(rows);
+  byId("day1Results").innerHTML = tableFromRows(rows, state.priorAdjustments);
   showCard("day1ResultsCard");
 }
 
 function renderDay2Results(envelope) {
   const rows = envelope?.data?.day2_result || [];
-  byId("day2Results").innerHTML = tableFromRows(rows);
+  byId("day2Results").innerHTML = tableFromRows(rows, state.priorAdjustments);
   showCard("day2ResultsCard");
 }
 
@@ -606,6 +692,7 @@ function escapeCsvCell(value) {
 function buildCsvRows() {
   const header = [
     "Day",
+    "Unique Patient ID",
     "Treatment",
     "Averaged Predicted Probability (%)",
     "Prevalence-Adjusted Probability (%)",
@@ -625,6 +712,7 @@ function buildCsvRows() {
   [...day1Rows, ...day2Rows].forEach((row) => {
     const values = [
       row.day,
+      state.uniquePatientId || "",
       row.treatment,
       row.avgPredictedProbabilityPct,
       row.adjustedPredictedProbabilityPct,
@@ -658,6 +746,8 @@ async function handleRunDay1() {
   try {
     if (!state.startupReady) throw new Error("APIs are not ready yet. Click 'Check API Status' first.");
     setLoading("day1", true);
+    state.uniquePatientId = collectUniquePatientId();
+    setPatientIdChips(state.uniquePatientId);
     const baselineInputs = collectBaselineInputs();
     const priorAdjustments = collectOptionalStrata();
     const envelope = await postJson(
@@ -688,6 +778,8 @@ async function handleRunDay2() {
   try {
     if (!state.startupReady) throw new Error("APIs are not ready yet. Click 'Check API Status' first.");
     setLoading("day2", true);
+    state.uniquePatientId = collectUniquePatientId();
+    setPatientIdChips(state.uniquePatientId);
     if (!state.baselineInputs) throw new Error("Run Day 1 first to generate baseline and Day 2 prefill.");
     const day2Prefill = collectDay2Prefill();
     const priorAdjustments = collectOptionalStrata();
@@ -723,6 +815,8 @@ function handleExport() {
     setStatus("error", "Failed: run both Day 1 and Day 2 predictions before exporting CSV.");
     return;
   }
+  state.uniquePatientId = collectUniquePatientId();
+  setPatientIdChips(state.uniquePatientId);
   const csvText = buildCsvRows();
   downloadCsv("sepsis-flow-two-day-results.csv", csvText);
   setStatus("success", "Success: CSV export downloaded.");
@@ -820,6 +914,10 @@ function init() {
   byId("runDay2Btn").addEventListener("click", handleRunDay2);
   byId("exportBtn").addEventListener("click", handleExport);
   byId("retryWarmupBtn").addEventListener("click", runStartupWarmup);
+  byId("uniquePatientId")?.addEventListener("input", () => {
+    state.uniquePatientId = collectUniquePatientId();
+    setPatientIdChips(state.uniquePatientId);
+  });
   byId("day1Form").addEventListener("input", (event) => {
     if (event.target?.id === "oxy.ra") clampNumberInputToBounds(event.target);
   });
@@ -832,6 +930,7 @@ function init() {
     setInteractionLocked(false);
     state.startupReady = true;
     state.startupWarming = false;
+    setPatientIdChips(collectUniquePatientId());
     setStatus("neutral", `Local API mode: warm-up disabled. Using local orchestrator at ${ORCHESTRATOR_API_BASE_URL}.`);
     void checkLocalOrchestratorHealth();
     return;
@@ -839,6 +938,7 @@ function init() {
 
   setInteractionLocked(true);
   state.startupReady = false;
+  setPatientIdChips(collectUniquePatientId());
   setStatus("neutral", "APIs are idle. Click 'Check API Status' to wake services and continue.");
 
   setWarmupUi({

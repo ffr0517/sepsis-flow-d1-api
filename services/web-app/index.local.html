@@ -5,16 +5,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sepsis Flow (Local) | Two-Day Treatment Prediction</title>
+  <meta name="theme-color" content="#ffffff" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="./icon-512.png" />
+  <link rel="manifest" href="./manifest.local.webmanifest" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
 
 <body>
-  <main class="app-shell">
+  <main class="app-shell app-shell-local">
+    <div class="local-page-brand">
+      <img class="local-page-brand-logo" src="./banner-logo.png"
+        alt="Sepsis Flow: Sequential Triage Support for Paediatric Febrile Illness" />
+    </div>
     <section class="hero card">
-      <p class="eyebrow">DEVELOPED USING DATA FROM THE <a
-          href="https://www.thelancet.com/journals/lanchi/article/PIIS2352-4642%2825%2900183-X/fulltext" target="_blank"
-          rel="noopener noreferrer">SPOT SEPSIS STUDY</a></p>
-      <h1>Sequential Triage Support for Paediatric Febrile Illness</h1>
+      <div class="hero-top">
+        <p class="eyebrow">DEVELOPED USING DATA FROM THE <a
+            href="https://www.thelancet.com/journals/lanchi/article/PIIS2352-4642%2825%2900183-X/fulltext" target="_blank"
+            rel="noopener noreferrer">SPOT SEPSIS STUDY</a></p>
+      </div>
       <p class="subtitle">
         Uses baseline clinical presentation to estimate the probability of five treatment-intensity levels across the
         first 48 hours of care.
