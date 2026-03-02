@@ -39,6 +39,7 @@ const uiState = {
   statusText: "Initializing application...",
   assessPatientId: null,
   selectedAssessmentId: null,
+  connectionGateVisible: true,
   guestImportPromptVisible: false,
   guestImportResult: null,
   profile: null,
@@ -1024,6 +1025,36 @@ function renderGuestImportModal() {
   modal.classList.toggle("hidden", !uiState.guestImportPromptVisible);
 }
 
+function renderConnectionGateModal() {
+  const modal = byId("connectionGateModal");
+  if (!modal) return;
+
+  const conn = connectionStore.getState();
+  modal.classList.toggle("hidden", !uiState.connectionGateVisible);
+
+  const status = byId("connectionGateStatus");
+  const message = byId("connectionGateMessage");
+  const actionBtn = byId("gateCheckConnectionBtn");
+
+  if (status) {
+    const label = conn.state === "ready"
+      ? "Ready to assess."
+      : conn.state === "degraded"
+        ? "Connection degraded."
+        : "Connection check pending.";
+    status.textContent = label;
+  }
+
+  if (message) {
+    message.textContent = conn.message || "Manual API check required before using the app.";
+  }
+
+  if (actionBtn) {
+    actionBtn.disabled = Boolean(conn.warming);
+    actionBtn.textContent = conn.warming ? "Checking..." : "Check API status";
+  }
+}
+
 function renderDay1Form(defaults = defaultDay1FormValues()) {
   const form = byId("day1Form");
   if (!form) return;
@@ -1323,11 +1354,24 @@ function renderShell() {
         </div>
       </div>
     </div>
+
+    <div id="connectionGateModal" class="modal connection-gate-modal">
+      <div class="modal-card connection-gate-card">
+        <h3>Manual API Status Check</h3>
+        <p class="muted">Check backend readiness before using the app.</p>
+        <p id="connectionGateStatus" class="connection-gate-status">Connection check pending.</p>
+        <p id="connectionGateMessage" class="connection-gate-message">Manual API check required before using the app.</p>
+        <div class="actions-row">
+          <button id="gateCheckConnectionBtn" class="btn btn-primary">Check API status</button>
+        </div>
+      </div>
+    </div>
   `;
 
   renderDay1Form(defaultDay1FormValues());
   renderDay2Form({});
   renderNav();
+  renderConnectionGateModal();
 }
 
 async function maybePromptGuestImport() {
@@ -1366,6 +1410,30 @@ async function loadWorkspaceMeta() {
   }
 
   renderProfileState();
+}
+
+async function runManualConnectionCheck({ closeGateOnReady = false } = {}) {
+  setStatus("Checking connection and warming services...");
+  renderConnectionGateModal();
+  try {
+    await connectionManager.checkReady();
+    const conn = connectionStore.getState();
+    setStatus(conn.message || "Connection checked.");
+    if (closeGateOnReady && conn.state === "ready") {
+      uiState.connectionGateVisible = false;
+      renderConnectionGateModal();
+      if (authStore.getState().mode === "authenticated") {
+        await maybePromptGuestImport();
+      }
+    } else {
+      renderConnectionGateModal();
+    }
+  } catch (error) {
+    setStatus(error?.message || "Connection check failed.");
+    renderConnectionGateModal();
+  }
+
+  renderAssessState();
 }
 
 function hydrateFromAssessmentRecord(record) {
@@ -1414,15 +1482,10 @@ async function handleClick(event) {
     return;
   }
 
-  if (target.id === "checkConnectionBtn") {
-    setStatus("Checking connection and warming services...");
-    try {
-      await connectionManager.checkReady();
-      setStatus(connectionStore.getState().message || "Connection checked.");
-      renderAssessState();
-    } catch (error) {
-      setStatus(error?.message || "Connection check failed.");
-    }
+  if (target.id === "checkConnectionBtn" || target.id === "gateCheckConnectionBtn") {
+    await runManualConnectionCheck({
+      closeGateOnReady: target.id === "gateCheckConnectionBtn"
+    });
     return;
   }
 
@@ -1865,6 +1928,7 @@ function subscribeStores() {
   connectionStore.subscribe((state) => {
     setStatus(state.message || "Status updated.");
     renderAssessState();
+    renderConnectionGateModal();
   });
 
   workspaceStore.subscribe(() => {
@@ -1899,14 +1963,8 @@ async function init() {
 
   await refreshPatients();
   await loadWorkspaceMeta();
-  await connectionManager.checkReady();
-
-  const auth = authStore.getState();
-  if (auth.mode === "authenticated") {
-    await maybePromptGuestImport();
-  }
-
-  setStatus("Ready.");
+  setStatus("Manual API status check required.");
+  renderConnectionGateModal();
 }
 
 void init();

@@ -581,6 +581,23 @@ button {
   gap: var(--space-3);
 }
 
+.connection-gate-modal {
+  z-index: 30;
+}
+
+.connection-gate-card {
+  width: min(620px, 92vw);
+}
+
+.connection-gate-status {
+  font-weight: 650;
+  color: #23484a;
+}
+
+.connection-gate-message {
+  color: var(--muted);
+}
+
 .settings-links {
   display: grid;
   gap: var(--space-2);
