@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sepsis Flow | Two-Day Treatment Prediction</title>
+  <title>Sepsis Flow | Workspace App</title>
   <meta name="theme-color" content="#ffffff" />
   <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png" />
@@ -14,152 +14,21 @@
 </head>
 
 <body>
-  <main class="app-shell">
-    <div class="local-page-brand">
-      <img class="local-page-brand-logo" src="./banner-logo.png"
-        alt="Sepsis Flow: Sequential Triage Support for Paediatric Febrile Illness" />
-    </div>
-    <section class="hero card">
-      <div class="hero-top">
-        <p class="eyebrow">DEVELOPED USING DATA FROM THE <a
-            href="https://www.thelancet.com/journals/lanchi/article/PIIS2352-4642%2825%2900183-X/fulltext" target="_blank"
-            rel="noopener noreferrer">SPOT SEPSIS STUDY</a></p>
-      </div>
-      <p class="subtitle">
-        Uses baseline clinical presentation to estimate the probability of five treatment-intensity levels across the
-        first 48 hours of care.
-        Derived from the multi-country Spot Sepsis cohort (2020-2022), spanning seven hospitals in Bangladesh,
-        Cambodia, Indonesia, Lao PDR, and Viet Nam.
-      </p>
-    </section>
-
-    <section id="statusCard" class="card status">
-      <div class="status-row">
-        <span id="statusIndicator" class="status-indicator status-neutral"></span>
-        <h2>Current Status</h2>
-      </div>
-      <p id="statusText" class="status-text">API checks are manual. Click "Check API Status" to wake services and continue.</p>
-    </section>
-
-    <section id="warmupCard" class="card">
-      <div class="section-header">
-        <h2>API Status Check</h2>
-        <span id="warmupChip" class="chip">Pending</span>
-      </div>
-      <p id="warmupText" class="hint">Manual check only. Click the button to send wake-up requests to the orchestrator, Day 1 API, and Day 2 API, then verify readiness.</p>
-      <div class="actions">
-        <button id="retryWarmupBtn" class="btn" type="button">Check API Status</button>
-      </div>
-    </section>
-
-    <section id="day1InputCard" class="card gateable">
-      <div class="section-header">
-        <h2>Baseline Presenting Clinical Features (Day 0)</h2>
-        <span class="chip">Required Fields</span>
-      </div>
-      <div class="grid-form prior-form">
-        <div class="field">
-          <label for="uniquePatientId">Unique Patient ID (optional)</label>
-          <input id="uniquePatientId" name="uniquePatientId" type="text" autocomplete="off"
-            placeholder="e.g. CAMB-00123" />
-        </div>
-      </div>
-      <details id="priorAdjustmentsPanel" class="collapsible-panel">
-        <summary>Optional: Country and Inpatient Status Prevalence Adjustment</summary>
-        <p class="hint">Leave both fields unset to use default 50/50 (non-adjusted) predictions.
-          This default averaged probability shown by the model is an evidence score from a balanced 50/50 training
-          world: it answers “if cases and non-cases were equally likely, do this child’s features look more like a case
-          or a non-case?” and is useful for comparing patients,
-          but it is not an absolute real-world risk.</p> 
-          
-          <p class="hint">If you add country and inpatient/outpatient information,
-          the app converts that evidence score into a calibrated risk by adjusting to the baseline treatment prevalence
-          in the relevant context and updating the alert threshold accordingly;
-          the calibrated value can be interpreted as the estimated probability of receiving that treatment level in this
-          setting.</p>
-
-          <p class="hint">On test data, providing both country and inpatient/outpatient made predictions more precise:
-          PPV increased from +0.7 to +5.4 percentage points (largest gains for Day 1 Non-bolused IV fluids:
-          41.9% to 47.3% and Day 2 Non-bolused IV fluids: 25.0% → 27.9%) and risk enrichment improved by +0.2 to +1.4x
-          (largest for Day 2 Mechanical ventilation,
-          inotropes, or renal replacement therapy: 3.1x to 4.5x). Sensitivity was unchanged for 9/10 outcomes;
-          Day 1 Non-bolused IV fluids traded a small sensitivity decrease (52.4% to 47.6%) for higher PPV (4.4% to
-          5.6%).</p>
-        <div class="grid-form prior-form">
-          <div class="field">
-            <label for="priorCountry">Country</label>
-            <select id="priorCountry" name="priorCountry">
-              <option value="">Not set (standard)</option>
-              <option value="Bangladesh">Bangladesh</option>
-              <option value="Cambodia">Cambodia</option>
-              <option value="Indonesia">Indonesia</option>
-              <option value="Laos">Laos</option>
-              <option value="Vietnam">Vietnam</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="priorInpatientStatus">Inpatient Status</label>
-            <select id="priorInpatientStatus" name="priorInpatientStatus">
-              <option value="">Not set (standard)</option>
-              <option value="Inpatient">Inpatient</option>
-              <option value="Outpatient">Outpatient</option>
-            </select>
-          </div>
-        </div>
-      </details>
-      <form id="day1Form" class="grid-form"></form>
-      <div class="actions">
-        <button id="runDay1Btn" class="btn btn-primary" type="button">Run Day 1</button>
-      </div>
-    </section>
-
-    <section id="day1ResultsCard" class="card gateable hidden">
-      <div class="section-header">
-        <h2>Day 1 Treatment Predictions</h2>
-        <span id="day1PatientIdChip" class="chip hidden"></span>
-      </div>
-      <div id="day1Results"></div>
-    </section>
-
-    <section id="day2EditCard" class="card gateable hidden">
-      <div class="section-header">
-        <h2>Prefilled Predicted Day 1 Treatments for Day 2 Prediction</h2>
-        <span class="chip">Review & Adjust</span>
-      </div>
-      <form id="day2Form" class="grid-form compact"></form>
-      <div class="actions">
-        <button id="runDay2Btn" class="btn btn-primary" type="button">Run Day 2</button>
-      </div>
-    </section>
-
-    <section id="day2ResultsCard" class="card gateable hidden">
-      <div class="section-header">
-        <h2>Day 2 Treatment Predictions</h2>
-        <span id="day2PatientIdChip" class="chip hidden"></span>
-      </div>
-      <div id="day2Results"></div>
-    </section>
-
-    <section id="exportCard" class="card gateable hidden">
-      <div class="section-header">
-        <h2>Export</h2>
-      </div>
-      <p class="hint">Download Day 1 and Day 2 prediction results as CSV.</p>
-      <div class="actions">
-        <button id="exportBtn" class="btn" type="button">Export Results CSV</button>
-      </div>
-    </section>
-
-    <section class="card">
-      <div class="actions center">
-        <a class="btn" href="https://github.com/ffr0517/sepsis-flow-platform" target="_blank"
-          rel="noopener noreferrer">View GitHub Repository</a>
-        <a class="btn" href="mailto:lcmrhodes98@gmail.com?subject=Sepsis%20Flow%20App%20Feedback">Email Questions / Suggestions</a>
-      </div>
-    </section>
-  </main>
-
-  <script src="./app.js"></script>
+  <main id="app" class="app-root"></main>
+  <script>
+    window.SEPSIS_FLOW_API_BASE_URLS = {
+      orchestrator: "https://sepsis-flow-orchestrator.onrender.com"
+    };
+    window.SEPSIS_FLOW_APP_CONFIG = {
+      skipStartupWarmup: false,
+      defaultEnvironment: "prod"
+    };
+    window.SEPSIS_FLOW_SUPABASE = {
+      url: "https://euxusnwxnsjlwgefgvxv.supabase.co",
+      anonKey: "sb_publishable_KLRiMIEcQzHO5n6_jy6LWw_5mdJaZZJ"
+    };
+  </script>
+  <script type="module" src="./app.js"></script>
 </body>
 
 </html>

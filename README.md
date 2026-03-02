@@ -131,6 +131,7 @@ curl -X POST http://localhost:8000/flow/day1?format=long \
 - **Model artefacts:** `services/day1-api/api/models/day1_bundle.rds` and `services/day2-api/api/models/day2_bundle.rds`.
 - **Prevalence table:** `strata prevalence adjustment/prevalence_all_nested.rds` used by both APIs (overridable via `PREVALENCE_TABLE_PATH`).
 - **Frontend:** `services/web-app/` static UI for startup-gated Day 1 -> Day 2 workflow and CSV export.
+- **Auth/workspace persistence (optional):** `services/supabase/` migrations + edge functions for account/workspace mode.
 - **Evaluation script:** `test_eval.R` for batched API evaluation across prior-adjustment variants.
 
 ---

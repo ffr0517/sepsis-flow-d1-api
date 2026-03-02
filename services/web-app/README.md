@@ -1,53 +1,75 @@
-# Sepsis Flow Web App (Static)
+# Sepsis Flow Web App
 
-Static two-step frontend for the Day 1 -> Day 2 workflow.
+Desktop-first static web app with:
 
-## Features
+- Patient-centric navigation (`Patients`, `Assess`, `Settings`)
+- Guest mode (local IndexedDB persistence)
+- Optional authenticated workspace mode (Supabase auth + Postgres)
+- Day 1 -> Day 2 sequential assessment flow
+- Day 2 carry-forward override editor
+- 48-hour deterministic summary from highest predicted treatment level
+- Connection manager (`warming`, `ready`, `degraded`) gating assessment submissions
+- CSV export for selected patient or full dataset
 
-- Day 1 required input form.
-- Optional collapsible prevalence-adjustment inputs:
-  - `country` (`Bangladesh`, `Cambodia`, `Indonesia`, `Laos`, `Vietnam`)
-  - `inpatient_status` (`Inpatient` / `Outpatient`)
-  - If left unset, standard 50/50 (non-adjusted) output is used.
-- Calls orchestrator `POST /flow/day1`.
-- Displays Day 1 treatment predictions, including:
-  - `mean_predicted_probability`
-  - and, when available, prevalence-adjusted fields (`p_adj`, `t_adj`, prevalence metadata)
-- Prefills editable Day 2 carry-forward fields:
-  - `LEVEL1_TREATMENTS_D1_SAFE_0` ... `LEVEL5_TREATMENTS_D1_SAFE_0`
-- Calls orchestrator `POST /flow/day2`.
-- Displays Day 2 treatment predictions with the same conditional adjusted fields as Day 1.
-- Exports combined flow results + trace metadata as JSON.
+## Runtime Modes
 
-## Local Run
+### Guest mode
+- No login required.
+- Patients/assessments saved locally in browser IndexedDB.
+- Data is device/browser scoped.
 
-Recommended (starts local APIs + orchestrator + web server, waits for health checks):
+### Authenticated workspace mode
+- Email/password login via Supabase.
+- Email verification required.
+- Data stored in Supabase Postgres and isolated by workspace membership (RLS).
+- One workspace per user in v1.
+
+## Supabase setup
+
+See `services/supabase/README.md`.
+
+You must configure in page bootstrap before loading the app:
+
+```html
+<script>
+  window.SEPSIS_FLOW_SUPABASE = {
+    url: "https://YOUR_PROJECT.supabase.co",
+    anonKey: "YOUR_ANON_KEY"
+  };
+</script>
+```
+
+If omitted, app runs in guest-only mode.
+
+## Local run
+
+Recommended stack launcher:
 
 ```bash
-# Run from the repository root
 ./scripts/run-local-web.sh
 ```
 
-Then open `http://localhost:5173/index.local.html`.
+Open:
 
-Local-only frontend changes should be made in `app.local.js`.
-The deployed Render page continues to use `app.js` (via `index.html`).
+- `http://localhost:5173/index.local.html`
 
-Manual web-only run (static server only; does not start APIs):
+## Manual run (frontend only)
 
 ```bash
 cd services/web-app
 python3 -m http.server 5173
 ```
 
-Then open:
-- `http://localhost:5173/index.local.html` for local APIs
-- `http://localhost:5173/index.html` for deployed Render endpoints
+Open:
 
-## Deploy (Cloudflare Pages)
+- `http://localhost:5173/index.html` (deployed orchestrator default)
+- `http://localhost:5173/index.local.html` (local orchestrator default)
 
-1. Connect this repository to Cloudflare Pages.
-2. Set build command to empty (none).
-3. Set output directory to `services/web-app`.
-4. Deploy.
-5. Set `CORS_ALLOW_ORIGINS` on the orchestrator to include the deployed Pages URL.
+## Tests
+
+```bash
+cd services/web-app
+npm test
+```
+
+(Uses Node built-in test runner; no external dependencies.)
