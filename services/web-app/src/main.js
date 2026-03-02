@@ -21,7 +21,9 @@ import { createWorkspaceCryptoService } from "./services/workspaceCryptoService.
 
 const runtimeConfig = {
   apiBaseUrls: window.SEPSIS_FLOW_API_BASE_URLS || {
-    orchestrator: "https://sepsis-flow-orchestrator.onrender.com"
+    orchestrator: "https://sepsis-flow-orchestrator.onrender.com",
+    day1: "https://sepsis-flow-d1-api.onrender.com",
+    day2: "https://sepsis-flow-platform.onrender.com"
   },
   appConfig: window.SEPSIS_FLOW_APP_CONFIG || {},
   supabase: window.SEPSIS_FLOW_SUPABASE || {
@@ -90,7 +92,12 @@ const apiClient = new ApiClient({
 });
 
 const connectionManager = createConnectionManager(apiClient, {
-  skipWarmup: Boolean(runtimeConfig.appConfig.skipStartupWarmup)
+  skipWarmup: Boolean(runtimeConfig.appConfig.skipStartupWarmup),
+  getWakeUrls: () => ({
+    orchestrator: currentBaseUrl(),
+    day1: runtimeConfig.apiBaseUrls.day1 || runtimeConfig.apiBaseUrls.day1Api || "https://sepsis-flow-d1-api.onrender.com",
+    day2: runtimeConfig.apiBaseUrls.day2 || runtimeConfig.apiBaseUrls.day2Api || "https://sepsis-flow-platform.onrender.com"
+  })
 });
 
 const authService = createAuthService({
@@ -146,6 +153,12 @@ function isWorkspaceUnlocked() {
 function ensureWorkspaceUnlocked() {
   if (!isWorkspaceUnlocked()) {
     throw new Error("Unlock workspace with passphrase before accessing workspace data.");
+  }
+}
+
+function ensureConnectionReady() {
+  if (!connectionManager.isReady()) {
+    throw new Error("APIs are not ready yet. Click 'Check API Status' first.");
   }
 }
 
@@ -548,7 +561,7 @@ async function maybePromptUpdatePatientProfileFromAssessment(patientId) {
 
 async function runDay1() {
   ensureWorkspaceUnlocked();
-  if (!connectionManager.isReady()) throw new Error("Connection is not ready yet.");
+  ensureConnectionReady();
   const patientId = uiState.assessPatientId;
   if (!patientId) throw new Error("Select a patient before running Day 1.");
 
@@ -618,7 +631,7 @@ async function runDay1() {
 
 async function runDay2() {
   ensureWorkspaceUnlocked();
-  if (!connectionManager.isReady()) throw new Error("Connection is not ready yet.");
+  ensureConnectionReady();
   const patientId = uiState.assessPatientId;
   if (!patientId) throw new Error("Select a patient before running Day 2.");
 
@@ -777,6 +790,44 @@ function renderGlobalStatus() {
   mode.textContent = modeLabel();
 }
 
+function renderWarmupStatusCard() {
+  const card = byId("warmupCard");
+  const chip = byId("warmupChip");
+  const text = byId("warmupText");
+  const actionBtn = byId("retryWarmupBtn");
+  const localSkip = Boolean(readSettings().skipStartupWarmup);
+  const conn = connectionStore.getState();
+
+  if (card) card.classList.toggle("hidden", localSkip);
+  if (localSkip) return;
+
+  if (chip) {
+    chip.textContent = conn.warmupChipLabel || "Pending";
+    chip.className = `chip ${conn.warmupChipClass || ""}`.trim();
+  }
+  if (text) {
+    text.textContent = conn.warmupText
+      || "Manual check only. Click 'Check API Status' to send wake-up requests to the orchestrator, Day 1 API, and Day 2 API.";
+  }
+  if (actionBtn) {
+    actionBtn.disabled = Boolean(conn.warming);
+    actionBtn.textContent = conn.warming ? "Checking..." : "Check API Status";
+  }
+}
+
+function setAssessInteractionLocked(locked) {
+  const cards = document.querySelectorAll(".warmup-gateable");
+  cards.forEach((card) => {
+    card.classList.toggle("locked", locked);
+    card.querySelectorAll("input, button, select, textarea").forEach((el) => {
+      if (!(el instanceof HTMLInputElement || el instanceof HTMLButtonElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) {
+        return;
+      }
+      el.disabled = locked;
+    });
+  });
+}
+
 function renderNav() {
   const pages = ["new-patient", "patients", "assess", "settings", "profile"];
   for (const page of pages) {
@@ -933,7 +984,9 @@ function renderPatientsState() {
 function renderAssessState() {
   const assess = assessmentStore.getState();
   const patient = getAssessPatient();
+  const conn = connectionStore.getState();
   const ready = connectionManager.isReady();
+  const interactionLocked = !ready || conn.warming;
 
   const selector = byId("assessPatientSelect");
   if (selector) {
@@ -946,10 +999,11 @@ function renderAssessState() {
     ? `Selected patient: ${patient.alias}`
     : "Select a patient to begin assessment.";
 
+  setAssessInteractionLocked(interactionLocked);
   const canRun = ready && Boolean(patient);
   byId("runDay1Btn").disabled = uiState.loading.day1 || !canRun;
   byId("runDay2Btn").disabled = uiState.loading.day2 || !canRun || !assess.baselineInputs;
-  byId("exportAssessPatientBtn").disabled = !patient;
+  byId("exportAssessPatientBtn").disabled = !patient || !ready;
 
   byId("runDay1Btn").textContent = uiState.loading.day1 ? "Running Day 1..." : "Run Day 1";
   byId("runDay2Btn").textContent = uiState.loading.day2 ? "Running Day 2..." : "Run Day 2";
@@ -1014,7 +1068,7 @@ function renderSettingsState() {
   if (redactBox) redactBox.checked = Boolean(uiState.supportExportRedactExternalIds);
   const scopeSelect = byId("supportExportScopeSelect");
   if (scopeSelect) scopeSelect.value = uiState.supportExportScope;
-  const exportLocked = requiresWorkspaceUnlock() && !isWorkspaceUnlocked();
+  const exportLocked = (requiresWorkspaceUnlock() && !isWorkspaceUnlocked()) || !connectionManager.isReady();
   const supportBtn = byId("exportSupportPackageBtn");
   const allCsvBtn = byId("exportAllCsvBtn");
   const jsonBtn = byId("exportJsonBtn");
@@ -1187,29 +1241,38 @@ function renderConnectionGateModal() {
   const modal = byId("connectionGateModal");
   if (!modal) return;
 
+  if (readSettings().skipStartupWarmup) {
+    modal.classList.add("hidden");
+    return;
+  }
+
   const conn = connectionStore.getState();
   modal.classList.toggle("hidden", !uiState.connectionGateVisible);
 
   const status = byId("connectionGateStatus");
   const message = byId("connectionGateMessage");
-  const actionBtn = byId("gateCheckConnectionBtn");
+  const actionBtn = byId("gateRetryWarmupBtn");
 
   if (status) {
     const label = conn.state === "ready"
-      ? "Ready to assess."
+      ? "Ready"
+      : conn.state === "warming"
+        ? "Checking API readiness..."
+        : conn.state === "pending"
+          ? "Pending"
       : conn.state === "degraded"
-        ? "Connection degraded."
-        : "Connection check pending.";
+        ? "Failed"
+        : "Pending";
     status.textContent = label;
   }
 
   if (message) {
-    message.textContent = conn.message || "Manual API check required before using the app.";
+    message.textContent = conn.warmupText || conn.message || "Manual API check required before using the app.";
   }
 
   if (actionBtn) {
     actionBtn.disabled = Boolean(conn.warming);
-    actionBtn.textContent = conn.warming ? "Checking..." : "Check API status";
+    actionBtn.textContent = conn.warming ? "Checking..." : "Check API Status";
   }
 }
 
@@ -1295,10 +1358,17 @@ function renderShell() {
             <strong>System status</strong>
           </div>
           <p id="sidebarStatusText" class="status-text">Initializing application...</p>
+          <section id="warmupCard" class="warmup-card">
+            <div class="section-header">
+              <h4>API Status Check</h4>
+              <span id="warmupChip" class="chip">Pending</span>
+            </div>
+            <p id="warmupText" class="hint">API checks are manual. Click "Check API Status" to wake services and continue.</p>
+            <div class="actions-row">
+              <button id="retryWarmupBtn" class="btn btn-small" type="button">Check API Status</button>
+            </div>
+          </section>
           <span id="sidebarModeBadge" class="chip">Guest (local only)</span>
-          <div class="actions-row">
-            <button id="checkConnectionBtn" class="btn btn-small">Check connection</button>
-          </div>
         </section>
       </aside>
 
@@ -1375,7 +1445,7 @@ function renderShell() {
         </section>
 
         <section id="page-assess" class="page-section hidden">
-          <section class="card">
+          <section class="card warmup-gateable">
             <h2>Assessment context</h2>
             <div class="grid-two">
               <div class="field">
@@ -1389,7 +1459,7 @@ function renderShell() {
             <p id="assessmentContextText" class="muted"></p>
           </section>
 
-          <section class="card">
+          <section class="card warmup-gateable">
             <h2>Day 1 baseline inputs</h2>
             <details>
               <summary>Optional prevalence adjustment</summary>
@@ -1417,12 +1487,12 @@ function renderShell() {
             </div>
           </section>
 
-          <section class="card">
+          <section class="card warmup-gateable">
             <h2>Day 1 results</h2>
             <div id="day1Results"></div>
           </section>
 
-          <section class="card">
+          <section class="card warmup-gateable">
             <h2>Day 2 carry-forward editor</h2>
             <p class="muted">Indicators are prefilled from Day 1 and can be overridden before Day 2 submission.</p>
             <form id="day2Form" class="grid-form compact"></form>
@@ -1431,12 +1501,12 @@ function renderShell() {
             </div>
           </section>
 
-          <section class="card">
+          <section class="card warmup-gateable">
             <h2>Day 2 results</h2>
             <div id="day2Results"></div>
           </section>
 
-          <section class="card">
+          <section class="card warmup-gateable">
             <h2>48-hour summary</h2>
             <div id="summary48h"></div>
           </section>
@@ -1529,7 +1599,7 @@ function renderShell() {
         <p id="connectionGateStatus" class="connection-gate-status">Connection check pending.</p>
         <p id="connectionGateMessage" class="connection-gate-message">Manual API check required before using the app.</p>
         <div class="actions-row">
-          <button id="gateCheckConnectionBtn" class="btn btn-primary">Check API status</button>
+          <button id="gateRetryWarmupBtn" class="btn btn-primary">Check API Status</button>
         </div>
       </div>
     </div>
@@ -1563,6 +1633,7 @@ function renderShell() {
   renderDay1Form(defaultDay1FormValues());
   renderDay2Form({});
   renderNav();
+  renderWarmupStatusCard();
   renderConnectionGateModal();
   renderWorkspaceCryptoModal();
 }
@@ -1698,26 +1769,22 @@ async function runWorkspaceMigrationNow() {
 }
 
 async function runManualConnectionCheck({ closeGateOnReady = false } = {}) {
-  setStatus("Checking connection and warming services...");
+  setStatus("Loading: checking API endpoints");
   renderConnectionGateModal();
-  try {
-    await connectionManager.checkReady();
-    const conn = connectionStore.getState();
-    setStatus(conn.message || "Connection checked.");
-    if (closeGateOnReady && conn.state === "ready") {
-      uiState.connectionGateVisible = false;
-      renderConnectionGateModal();
-      if (authStore.getState().mode === "authenticated") {
-        await maybePromptGuestImport();
-      }
-    } else {
-      renderConnectionGateModal();
+
+  const conn = await connectionManager.checkReady();
+  setStatus(conn.message || "Connection checked.");
+  if (closeGateOnReady && conn.state === "ready") {
+    uiState.connectionGateVisible = false;
+    renderConnectionGateModal();
+    if (authStore.getState().mode === "authenticated") {
+      await maybePromptGuestImport();
     }
-  } catch (error) {
-    setStatus(error?.message || "Connection check failed.");
+  } else {
     renderConnectionGateModal();
   }
 
+  renderWarmupStatusCard();
   renderAssessState();
 }
 
@@ -1767,9 +1834,9 @@ async function handleClick(event) {
     return;
   }
 
-  if (target.id === "checkConnectionBtn" || target.id === "gateCheckConnectionBtn") {
+  if (target.id === "retryWarmupBtn" || target.id === "gateRetryWarmupBtn") {
     await runManualConnectionCheck({
-      closeGateOnReady: target.id === "gateCheckConnectionBtn"
+      closeGateOnReady: target.id === "gateRetryWarmupBtn"
     });
     return;
   }
@@ -1794,6 +1861,7 @@ async function handleClick(event) {
 
   if (target.id === "exportAssessPatientBtn") {
     ensureWorkspaceUnlocked();
+    ensureConnectionReady();
     const patient = getAssessPatient();
     if (!patient) {
       setStatus("Select a patient first.");
@@ -1808,6 +1876,7 @@ async function handleClick(event) {
 
   if (target.id === "exportAllCsvBtn") {
     ensureWorkspaceUnlocked();
+    ensureConnectionReady();
     const [patients, assessments] = await Promise.all([
       dataAccess.listPatients(""),
       dataAccess.getAllAssessments()
@@ -1820,6 +1889,7 @@ async function handleClick(event) {
 
   if (target.id === "exportJsonBtn") {
     ensureWorkspaceUnlocked();
+    ensureConnectionReady();
     const [patients, assessments] = await Promise.all([
       dataAccess.listPatients(""),
       dataAccess.getAllAssessments()
@@ -1838,6 +1908,7 @@ async function handleClick(event) {
 
   if (target.id === "exportSupportPackageBtn") {
     ensureWorkspaceUnlocked();
+    ensureConnectionReady();
     const scope = uiState.supportExportScope || "selected";
     const redact = Boolean(uiState.supportExportRedactExternalIds);
 
@@ -2357,6 +2428,8 @@ function subscribeStores() {
 
   settingsStore.subscribe(() => {
     renderSettingsState();
+    renderWarmupStatusCard();
+    renderConnectionGateModal();
   });
 
   patientStore.subscribe(() => {
@@ -2371,6 +2444,7 @@ function subscribeStores() {
   connectionStore.subscribe((state) => {
     setStatus(state.message || "Status updated.");
     renderAssessState();
+    renderWarmupStatusCard();
     renderConnectionGateModal();
   });
 
@@ -2389,9 +2463,11 @@ function subscribeStores() {
 
 async function init() {
   const persisted = loadPersistedSettings();
+  const runtimeSkipWarmup = Boolean(runtimeConfig.appConfig.skipStartupWarmup);
   settingsStore.patch({
     ...defaultSettings(),
-    ...(persisted || {})
+    ...(persisted || {}),
+    skipStartupWarmup: runtimeSkipWarmup
   });
 
   renderShell();
@@ -2416,7 +2492,17 @@ async function init() {
     await refreshPatients();
     await maybePromptGuestImport();
   }
-  setStatus("Manual API status check required.");
+
+  if (runtimeSkipWarmup) {
+    uiState.connectionGateVisible = false;
+    await connectionManager.checkReady();
+    setStatus("Local mode active. Startup warmup skipped.");
+  } else {
+    uiState.connectionGateVisible = true;
+    setStatus("APIs are idle. Click 'Check API Status' to wake services and continue.");
+  }
+
+  renderWarmupStatusCard();
   renderConnectionGateModal();
   renderWorkspaceCryptoModal();
 }

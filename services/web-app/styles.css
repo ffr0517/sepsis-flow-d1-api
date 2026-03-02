@@ -159,6 +159,22 @@ button {
   padding: var(--space-3);
 }
 
+.warmup-card {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid #deebe5;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.warmup-card h4 {
+  margin: 0;
+}
+
+.warmup-card .actions-row {
+  margin-top: 0;
+}
+
 .nav-btn {
   text-align: left;
   border: 1px solid var(--border);
@@ -216,6 +232,10 @@ button {
 
 .status-dot.status-ready {
   background: var(--ok);
+}
+
+.status-dot.status-pending {
+  background: #8d9da2;
 }
 
 .status-dot.status-warming {
@@ -349,6 +369,28 @@ button {
   color: #2d5751;
   border-radius: 999px;
   padding: 4px 8px;
+}
+
+.chip-ok {
+  background: #e4f6eb;
+  border-color: #bbdfc8;
+  color: #1f6f43;
+}
+
+.chip-warn {
+  background: #fff1df;
+  border-color: #f4cf9e;
+  color: #8e590f;
+}
+
+.chip-error {
+  background: #fde8e8;
+  border-color: #eab8b8;
+  color: #9f2d2d;
+}
+
+.warmup-gateable.locked {
+  opacity: 0.72;
 }
 
 .list-wrap {

@@ -1,19 +1,25 @@
 import { createStore } from "../state/createStore.js";
 
-const RETRY_DELAYS_MS = [2000, 5000, 10000];
+const STARTUP_WARMUP_MAX_ATTEMPTS = 2;
+const STARTUP_WARMUP_RETRY_DELAY_MS = 3000;
+const STARTUP_WARMUP_REQUEST_TIMEOUT_MS = 210000;
+const BROWSER_WAKE_ROUNDS = 2;
+const BROWSER_WAKE_DELAY_MS = 2500;
 
-function withJitter(ms) {
-  const jitter = ms * 0.2;
-  return Math.round(ms + ((Math.random() * jitter * 2) - jitter));
-}
+const INITIAL_MANUAL_WARMUP_TEXT = "Manual check only. Click 'Check API Status' to send wake-up requests to the orchestrator, Day 1 API, and Day 2 API.";
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const connectionStore = createStore({
-  state: "warming", // warming | ready | degraded
-  message: "Connection check pending.",
+  state: "pending", // pending | warming | ready | degraded
+  message: "APIs are idle. Click 'Check API Status' to wake services and continue.",
   failureType: null,
   lastCheckedAt: null,
   lastHealth: null,
-  warming: false
+  warming: false,
+  warmupText: INITIAL_MANUAL_WARMUP_TEXT,
+  warmupChipLabel: "Pending",
+  warmupChipClass: ""
 });
 
 function classifyFromWarmupError(error) {
@@ -26,14 +32,67 @@ function classifyFromWarmupError(error) {
   return "unknown";
 }
 
-export function createConnectionManager(apiClient, { skipWarmup = false } = {}) {
+function normalizeWakeUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  return `${text.replace(/\/+$/, "")}/`;
+}
+
+function summarizeWarmupTarget(details, key) {
+  const info = details?.[key];
+  if (!info) return null;
+  if (info.ok) return `${key.toUpperCase()}: ready`;
+  const status = Number.isFinite(Number(info?.last?.status)) ? `HTTP ${Number(info.last.status)}` : null;
+  const error = info?.last?.error ? String(info.last.error) : null;
+  const reason = status || error || "no response";
+  const attempts = Number.isFinite(Number(info?.attempts)) ? ` after ${Number(info.attempts)} probe(s)` : "";
+  return `${key.toUpperCase()}: ${reason}${attempts}`;
+}
+
+function summarizeWarmupError(error) {
+  const code = error?.responseBody?.error?.code ? ` [${error.responseBody.error.code}]` : "";
+  const details = error?.responseBody?.error?.details;
+  const targetSummaries = ["day1", "day2"].map((key) => summarizeWarmupTarget(details, key)).filter(Boolean);
+  if (targetSummaries.length === 0) return `${error?.message || "Unknown error."}${code}`;
+  return `${error?.message || "Unknown error."}${code} (${targetSummaries.join("; ")})`;
+}
+
+async function browserWake(url) {
+  try {
+    await fetch(url, {
+      method: "GET",
+      mode: "no-cors",
+      cache: "no-store",
+      credentials: "omit"
+    });
+  } catch {
+    // no-cors wake calls are best-effort; orchestrator warmup is the readiness source of truth.
+  }
+}
+
+async function wakeServicesFromBrowser(getWakeUrls, onRoundStart) {
+  const urlsConfig = (typeof getWakeUrls === "function" ? getWakeUrls() : {}) || {};
+  const urls = [urlsConfig.orchestrator, urlsConfig.day1, urlsConfig.day2]
+    .map(normalizeWakeUrl)
+    .filter(Boolean);
+
+  if (!urls.length) return;
+
+  for (let round = 1; round <= BROWSER_WAKE_ROUNDS; round += 1) {
+    onRoundStart?.(round, BROWSER_WAKE_ROUNDS);
+    await Promise.all(urls.map((url) => browserWake(url)));
+    if (round < BROWSER_WAKE_ROUNDS) await sleep(BROWSER_WAKE_DELAY_MS);
+  }
+}
+
+export function createConnectionManager(apiClient, { skipWarmup = false, getWakeUrls } = {}) {
   async function checkReady() {
     if (connectionStore.getState().warming) return connectionStore.getState();
 
     connectionStore.patch({
       warming: true,
       state: "warming",
-      message: "Warming backend services...",
+      message: "Loading: checking API endpoints",
       failureType: null
     });
 
@@ -42,59 +101,88 @@ export function createConnectionManager(apiClient, { skipWarmup = false } = {}) 
       try {
         health = await apiClient.health();
       } catch {
-        // local dev can still proceed even if health probe fails briefly
+        // local development can proceed even when the first health probe is not ready.
       }
 
       connectionStore.patch({
         warming: false,
         state: "ready",
-        message: "Ready to assess.",
+        message: "Local mode active. Startup warmup skipped.",
         failureType: null,
         lastHealth: health,
-        lastCheckedAt: new Date().toISOString()
+        lastCheckedAt: new Date().toISOString(),
+        warmupText: "Startup warmup skipped because local mode is enabled.",
+        warmupChipLabel: "Skipped",
+        warmupChipClass: ""
       });
       return connectionStore.getState();
     }
 
-    let lastError = null;
-
-    for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt += 1) {
-      try {
-        await apiClient.warmup(210000);
-        const health = await apiClient.health().catch(() => null);
-        connectionStore.patch({
-          warming: false,
-          state: "ready",
-          message: "Ready to assess.",
-          failureType: null,
-          lastHealth: health,
-          lastCheckedAt: new Date().toISOString()
-        });
-        return connectionStore.getState();
-      } catch (error) {
-        lastError = error;
-        if (attempt < RETRY_DELAYS_MS.length - 1) {
-          const delay = withJitter(RETRY_DELAYS_MS[attempt]);
-          connectionStore.patch({
-            state: "warming",
-            message: `Connection attempt ${attempt + 1} failed. Retrying...`,
-            failureType: classifyFromWarmupError(error)
-          });
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
-      }
-    }
-
     connectionStore.patch({
-      warming: false,
-      state: "degraded",
-      message: lastError?.message || "Connection check failed.",
-      failureType: classifyFromWarmupError(lastError),
-      lastHealth: null,
-      lastCheckedAt: new Date().toISOString()
+      warmupText: "Manual API check started. Sending wake-up requests, then verifying readiness. Cold starts on Render can take 1-3 minutes.",
+      warmupChipLabel: "Warming Up",
+      warmupChipClass: "chip-warn"
     });
 
-    return connectionStore.getState();
+    try {
+      await wakeServicesFromBrowser(getWakeUrls, (round, total) => {
+        connectionStore.patch({
+          warmupText: `Sending wake-up requests (${round}/${total}) to orchestrator, Day 1, and Day 2 APIs...`,
+          warmupChipLabel: "Waking",
+          warmupChipClass: "chip-warn"
+        });
+      });
+
+      let lastError = null;
+      for (let attempt = 1; attempt <= STARTUP_WARMUP_MAX_ATTEMPTS; attempt += 1) {
+        try {
+          await apiClient.warmup(STARTUP_WARMUP_REQUEST_TIMEOUT_MS);
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attempt < STARTUP_WARMUP_MAX_ATTEMPTS) {
+            connectionStore.patch({
+              warmupText: `API status check attempt ${attempt} failed while verifying readiness. Retrying...`,
+              warmupChipLabel: "Retrying",
+              warmupChipClass: "chip-warn",
+              failureType: classifyFromWarmupError(error)
+            });
+            await sleep(STARTUP_WARMUP_RETRY_DELAY_MS);
+          }
+        }
+      }
+
+      if (lastError) throw lastError;
+
+      const health = await apiClient.health().catch(() => null);
+      connectionStore.patch({
+        warming: false,
+        state: "ready",
+        message: "Ready to run Day 1 prediction.",
+        failureType: null,
+        lastHealth: health,
+        lastCheckedAt: new Date().toISOString(),
+        warmupText: "API status check complete. Orchestrator, Day 1, and Day 2 APIs are ready.",
+        warmupChipLabel: "Ready",
+        warmupChipClass: "chip-ok"
+      });
+      return connectionStore.getState();
+    } catch (error) {
+      const warmupMessage = summarizeWarmupError(error);
+      connectionStore.patch({
+        warming: false,
+        state: "degraded",
+        message: `Failed: ${warmupMessage}`,
+        failureType: classifyFromWarmupError(error),
+        lastHealth: null,
+        lastCheckedAt: new Date().toISOString(),
+        warmupText: `API status check failed: ${warmupMessage}`,
+        warmupChipLabel: "Failed",
+        warmupChipClass: "chip-error"
+      });
+      return connectionStore.getState();
+    }
   }
 
   return {

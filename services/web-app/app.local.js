@@ -1,5 +1,7 @@
 window.SEPSIS_FLOW_API_BASE_URLS = window.SEPSIS_FLOW_API_BASE_URLS || {
-  orchestrator: "http://localhost:8000"
+  orchestrator: "http://localhost:8000",
+  day1: "http://localhost:8001",
+  day2: "http://localhost:8002"
 };
 window.SEPSIS_FLOW_APP_CONFIG = window.SEPSIS_FLOW_APP_CONFIG || {
   skipStartupWarmup: true,
