@@ -7,6 +7,7 @@ import { settingsStore } from "./state/settingsStore.js";
 import { assessmentStore, resetAssessmentState } from "./state/assessmentStore.js";
 import { patientStore } from "./state/patientStore.js";
 import { workspaceStore } from "./state/workspaceStore.js";
+import { cryptoStore } from "./state/cryptoStore.js";
 import { guestRepository } from "./data/guestRepository.js";
 import { createWorkspaceRepository } from "./data/workspaceRepository.js";
 import { createDataAccessFacade } from "./data/dataAccessFacade.js";
@@ -16,6 +17,7 @@ import { asPercent, formatDateTime, hasValue } from "./utils/format.js";
 import { loadPersistedSettings, persistSettings, resolveOrchestratorBaseUrl } from "./services/environmentService.js";
 import { importGuestDataIntoWorkspace, markGuestImportDecision, shouldPromptGuestImport } from "./services/guestImportService.js";
 import { setPendingWorkspaceNameForEmail } from "./services/workspaceService.js";
+import { createWorkspaceCryptoService } from "./services/workspaceCryptoService.js";
 
 const runtimeConfig = {
   apiBaseUrls: window.SEPSIS_FLOW_API_BASE_URLS || {
@@ -40,8 +42,13 @@ const uiState = {
   assessPatientId: null,
   selectedAssessmentId: null,
   connectionGateVisible: true,
+  workspaceCryptoPromptVisible: false,
+  workspaceCryptoPromptMode: "unlock",
+  workspaceCryptoMigrationCounts: null,
   guestImportPromptVisible: false,
   guestImportResult: null,
+  supportExportRedactExternalIds: false,
+  supportExportScope: "selected",
   profile: null,
   loading: {
     day1: false,
@@ -69,6 +76,15 @@ function currentBaseUrl() {
   return resolveOrchestratorBaseUrl(readSettings(), runtimeEnvDefaults);
 }
 
+function isWorkspaceClientEncryptionEnabled() {
+  const config = runtimeConfig.appConfig || {};
+  if (config.workspace_client_encryption_v1 === false) return false;
+  if (config.workspaceClientEncryptionV1 === false) return false;
+  if (config.workspace_client_encryption_v1 === true) return true;
+  if (config.workspaceClientEncryptionV1 === true) return true;
+  return true;
+}
+
 const apiClient = new ApiClient({
   getBaseUrl: () => currentBaseUrl()
 });
@@ -82,16 +98,27 @@ const authService = createAuthService({
   supabaseAnonKey: runtimeConfig.supabase.anonKey
 });
 
+let workspaceCryptoService = null;
+
 const workspaceRepository = createWorkspaceRepository(
   () => authService.getSupabase(),
   () => authStore.getState(),
-  () => workspaceStore.getState().workspace
+  () => workspaceStore.getState().workspace,
+  () => workspaceCryptoService?.getCryptoContext?.() || { enabled: false, key: null, workspaceId: null },
+  () => workspaceStore.getState().membershipRole
 );
 
 const dataAccess = createDataAccessFacade({
   getMode: () => authStore.getState().mode,
   guestRepository,
   workspaceRepository
+});
+
+workspaceCryptoService = createWorkspaceCryptoService({
+  dataAccess,
+  getAuthState: () => authStore.getState(),
+  getWorkspaceState: () => workspaceStore.getState(),
+  featureEnabled: () => isWorkspaceClientEncryptionEnabled()
 });
 
 function modeLabel() {
@@ -105,6 +132,21 @@ function modeLabel() {
 function setStatus(text) {
   uiState.statusText = text;
   renderGlobalStatus();
+}
+
+function requiresWorkspaceUnlock() {
+  return isWorkspaceClientEncryptionEnabled() && authStore.getState().mode === "authenticated";
+}
+
+function isWorkspaceUnlocked() {
+  if (!requiresWorkspaceUnlock()) return true;
+  return cryptoStore.getState().state === "unlocked";
+}
+
+function ensureWorkspaceUnlocked() {
+  if (!isWorkspaceUnlocked()) {
+    throw new Error("Unlock workspace with passphrase before accessing workspace data.");
+  }
 }
 
 function getAssessPatient() {
@@ -279,6 +321,19 @@ async function refreshPatients() {
   renderPatientsState();
 
   try {
+    if (requiresWorkspaceUnlock() && !isWorkspaceUnlocked()) {
+      patientStore.patch({
+        patients: [],
+        filteredPatients: [],
+        selectedPatient: null,
+        selectedPatientId: null,
+        selectedPatientAssessments: [],
+        error: "Workspace is locked. Unlock with passphrase to view patient data.",
+        loading: false
+      });
+      return;
+    }
+
     const { search, selectedPatientId } = patientStore.getState();
     const patients = await dataAccess.listPatients(search);
     const selected = patients.find((row) => row.id === selectedPatientId) || null;
@@ -492,6 +547,7 @@ async function maybePromptUpdatePatientProfileFromAssessment(patientId) {
 }
 
 async function runDay1() {
+  ensureWorkspaceUnlocked();
   if (!connectionManager.isReady()) throw new Error("Connection is not ready yet.");
   const patientId = uiState.assessPatientId;
   if (!patientId) throw new Error("Select a patient before running Day 1.");
@@ -561,6 +617,7 @@ async function runDay1() {
 }
 
 async function runDay2() {
+  ensureWorkspaceUnlocked();
   if (!connectionManager.isReady()) throw new Error("Connection is not ready yet.");
   const patientId = uiState.assessPatientId;
   if (!patientId) throw new Error("Select a patient before running Day 2.");
@@ -673,6 +730,26 @@ function buildCsv(patients, assessments) {
   }
 
   return lines.join("\n");
+}
+
+function buildSupportPackage({ patients, assessments, scope, redactExternalIds }) {
+  const safePatients = (patients || []).map((row) => ({
+    ...row,
+    externalId: redactExternalIds ? null : (row.externalId || null)
+  }));
+
+  return {
+    exportedAt: new Date().toISOString(),
+    scope,
+    redactExternalIds: Boolean(redactExternalIds),
+    mode: authStore.getState().mode,
+    workspace: workspaceStore.getState().workspace || null,
+    environment: readSettings().environmentSelection,
+    orchestratorBaseUrl: currentBaseUrl(),
+    appVersion: runtimeConfig.appConfig.appVersion || "workspace-web-v1",
+    patients: safePatients,
+    assessments: assessments || []
+  };
 }
 
 function downloadText(filename, text, mime = "text/plain;charset=utf-8") {
@@ -933,6 +1010,17 @@ function renderSettingsState() {
 
   byId("runtimeEnvironmentText").textContent = `${settings.environmentSelection.toUpperCase()} (${currentBaseUrl()})`;
   byId("privacyShowExternalIdByDefault").checked = settings.privacyShowExternalIdByDefault;
+  const redactBox = byId("supportExportRedactExternalIds");
+  if (redactBox) redactBox.checked = Boolean(uiState.supportExportRedactExternalIds);
+  const scopeSelect = byId("supportExportScopeSelect");
+  if (scopeSelect) scopeSelect.value = uiState.supportExportScope;
+  const exportLocked = requiresWorkspaceUnlock() && !isWorkspaceUnlocked();
+  const supportBtn = byId("exportSupportPackageBtn");
+  const allCsvBtn = byId("exportAllCsvBtn");
+  const jsonBtn = byId("exportJsonBtn");
+  if (supportBtn) supportBtn.disabled = exportLocked;
+  if (allCsvBtn) allCsvBtn.disabled = exportLocked;
+  if (jsonBtn) jsonBtn.disabled = exportLocked;
 
   const importPanel = byId("importResultPanel");
   if (uiState.guestImportResult) {
@@ -954,6 +1042,11 @@ function renderProfileState() {
 
   if (auth.mode !== "authenticated") {
     panel.innerHTML = "<p class='hint'>Sign in to manage profile and workspace settings.</p>";
+    return;
+  }
+
+  if (requiresWorkspaceUnlock() && !isWorkspaceUnlocked()) {
+    panel.innerHTML = "<p class='hint'>Unlock workspace with passphrase to manage profile, members, and encrypted workspace data.</p>";
     return;
   }
 
@@ -986,6 +1079,10 @@ function renderProfileState() {
           </div>
           <button class="btn" type="submit">Save workspace name</button>
         </form>
+        <div class="danger-box">
+          <p class="small"><strong>Reset encrypted workspace data:</strong> removes all workspace patients and assessments. This cannot be undone.</p>
+          <button id="resetEncryptedWorkspaceBtn" class="btn btn-danger" type="button">Reset encrypted workspace data</button>
+        </div>
       ` : "<p class='hint'>Only owners can rename workspace.</p>"}
     </section>
 
@@ -1023,6 +1120,67 @@ function renderGuestImportModal() {
   const modal = byId("guestImportModal");
   if (!modal) return;
   modal.classList.toggle("hidden", !uiState.guestImportPromptVisible);
+}
+
+function renderWorkspaceCryptoModal() {
+  const modal = byId("workspaceCryptoModal");
+  if (!modal) return;
+
+  const auth = authStore.getState();
+  const crypto = cryptoStore.getState();
+  const shouldShow = uiState.workspaceCryptoPromptVisible && auth.mode === "authenticated" && isWorkspaceClientEncryptionEnabled();
+  modal.classList.toggle("hidden", !shouldShow);
+  if (!shouldShow) return;
+
+  const title = byId("workspaceCryptoModalTitle");
+  const body = byId("workspaceCryptoModalBody");
+  const setupForm = byId("workspaceCryptoSetupForm");
+  const unlockForm = byId("workspaceCryptoUnlockForm");
+  const migrateBox = byId("workspaceCryptoMigrateActions");
+  const migrateProgress = byId("workspaceCryptoMigrateProgress");
+  const error = byId("workspaceCryptoErrorText");
+
+  if (error) error.textContent = crypto.lastError || "";
+  if (setupForm) setupForm.classList.add("hidden");
+  if (unlockForm) unlockForm.classList.add("hidden");
+  if (migrateBox) migrateBox.classList.add("hidden");
+  if (migrateProgress) migrateProgress.textContent = "";
+
+  if (crypto.state === "setup_required") {
+    if (title) title.textContent = "Set Workspace Passphrase";
+    if (body) body.textContent = "Create a workspace passphrase. This passphrase is required each sign-in to unlock encrypted workspace data.";
+    if (setupForm) setupForm.classList.remove("hidden");
+    return;
+  }
+
+  if (crypto.state === "migrating") {
+    if (title) title.textContent = "Migrating Existing Workspace Data";
+    if (body) body.textContent = "Encrypting existing plaintext records. Keep this tab open.";
+    const progress = crypto.migrationProgress;
+    if (migrateProgress) {
+      if (progress?.total > 0) {
+        migrateProgress.textContent = `Progress: ${progress.done}/${progress.total}`;
+      } else {
+        migrateProgress.textContent = "Preparing migration...";
+      }
+    }
+    return;
+  }
+
+  if (uiState.workspaceCryptoPromptMode === "migrate") {
+    if (title) title.textContent = "Encrypt Existing Workspace Data";
+    if (body) body.textContent = "Legacy plaintext workspace rows were found. Migrate now to enforce zero-knowledge storage.";
+    if (migrateBox) migrateBox.classList.remove("hidden");
+    if (migrateProgress && uiState.workspaceCryptoMigrationCounts) {
+      const c = uiState.workspaceCryptoMigrationCounts;
+      migrateProgress.textContent = `Pending migration: ${c.patients} patient rows, ${c.assessments} assessment rows.`;
+    }
+    return;
+  }
+
+  if (title) title.textContent = "Unlock Workspace";
+  if (body) body.textContent = "Enter your workspace passphrase to decrypt and use workspace data.";
+  if (unlockForm) unlockForm.classList.remove("hidden");
 }
 
 function renderConnectionGateModal() {
@@ -1315,9 +1473,18 @@ function renderShell() {
           </section>
 
           <section class="card">
-            <h2>Export</h2>
-            <p class="muted">Export patients and assessments from your current mode (guest local or workspace cloud).</p>
+            <h2>Privacy and data sharing</h2>
+            <p class="muted">Workspace data remains private by default. Support data sharing is opt-in.</p>
+            <label class="checkbox-row"><input id="supportExportRedactExternalIds" type="checkbox" /> Redact external IDs in support package</label>
+            <div class="field">
+              <label for="supportExportScopeSelect">Support package scope</label>
+              <select id="supportExportScopeSelect">
+                <option value="selected">Selected patient only</option>
+                <option value="all">All patients in current workspace/mode</option>
+              </select>
+            </div>
             <div class="actions-row">
+              <button id="exportSupportPackageBtn" class="btn">Export support package</button>
               <button id="exportAllCsvBtn" class="btn">Export all CSV</button>
               <button id="exportJsonBtn" class="btn">Export JSON</button>
             </div>
@@ -1366,17 +1533,49 @@ function renderShell() {
         </div>
       </div>
     </div>
+
+    <div id="workspaceCryptoModal" class="modal hidden workspace-crypto-modal">
+      <div class="modal-card workspace-crypto-card">
+        <h3 id="workspaceCryptoModalTitle">Unlock Workspace</h3>
+        <p id="workspaceCryptoModalBody" class="muted"></p>
+        <p id="workspaceCryptoErrorText" class="error-text"></p>
+
+        <form id="workspaceCryptoSetupForm" class="mini-form hidden">
+          <input name="passphrase" type="password" minlength="8" required placeholder="Create workspace passphrase" />
+          <input name="passphraseConfirm" type="password" minlength="8" required placeholder="Confirm passphrase" />
+          <button class="btn btn-primary" type="submit">Set passphrase and unlock</button>
+        </form>
+
+        <form id="workspaceCryptoUnlockForm" class="mini-form hidden">
+          <input name="passphrase" type="password" required placeholder="Workspace passphrase" />
+          <button class="btn btn-primary" type="submit">Unlock workspace</button>
+        </form>
+
+        <div id="workspaceCryptoMigrateActions" class="actions-row hidden">
+          <button id="runWorkspaceMigrationBtn" class="btn btn-primary" type="button">Migrate now</button>
+          <button id="signOutForMigrationBtn" class="btn btn-danger" type="button">Sign out</button>
+        </div>
+        <p id="workspaceCryptoMigrateProgress" class="muted small"></p>
+      </div>
+    </div>
   `;
 
   renderDay1Form(defaultDay1FormValues());
   renderDay2Form({});
   renderNav();
   renderConnectionGateModal();
+  renderWorkspaceCryptoModal();
 }
 
 async function maybePromptGuestImport() {
   const auth = authStore.getState();
   if (auth.mode !== "authenticated") {
+    uiState.guestImportPromptVisible = false;
+    renderGuestImportModal();
+    return;
+  }
+
+  if (requiresWorkspaceUnlock() && !isWorkspaceUnlocked()) {
     uiState.guestImportPromptVisible = false;
     renderGuestImportModal();
     return;
@@ -1410,6 +1609,92 @@ async function loadWorkspaceMeta() {
   }
 
   renderProfileState();
+}
+
+async function ensureWorkspaceCryptoPromptState() {
+  if (!isWorkspaceClientEncryptionEnabled()) {
+    uiState.workspaceCryptoPromptVisible = false;
+    renderWorkspaceCryptoModal();
+    return;
+  }
+
+  const auth = authStore.getState();
+  if (auth.mode !== "authenticated") {
+    workspaceCryptoService.lockWorkspace();
+    uiState.workspaceCryptoPromptVisible = false;
+    uiState.workspaceCryptoPromptMode = "unlock";
+    uiState.workspaceCryptoMigrationCounts = null;
+    renderWorkspaceCryptoModal();
+    return;
+  }
+
+  const info = await workspaceCryptoService.refreshLockState();
+  patientStore.patch({
+    patients: [],
+    filteredPatients: [],
+    selectedPatientId: null,
+    selectedPatient: null,
+    selectedPatientAssessments: [],
+    error: info.requiresSetup
+      ? "Set workspace passphrase to initialize encrypted storage."
+      : "Workspace is locked. Unlock with passphrase to view workspace data."
+  });
+  uiState.workspaceCryptoPromptVisible = true;
+  uiState.workspaceCryptoPromptMode = info.requiresSetup ? "setup" : "unlock";
+  uiState.workspaceCryptoMigrationCounts = null;
+  renderWorkspaceCryptoModal();
+}
+
+async function maybePromptWorkspaceMigration() {
+  if (!requiresWorkspaceUnlock() || !isWorkspaceUnlocked()) return false;
+  const counts = await workspaceCryptoService.countUnencryptedRecords();
+  if (!counts.total) {
+    return false;
+  }
+
+  uiState.workspaceCryptoPromptVisible = true;
+  uiState.workspaceCryptoPromptMode = "migrate";
+  uiState.workspaceCryptoMigrationCounts = counts;
+  renderWorkspaceCryptoModal();
+  return true;
+}
+
+async function completeWorkspaceUnlockFlow() {
+  uiState.workspaceCryptoPromptVisible = false;
+  uiState.workspaceCryptoPromptMode = "unlock";
+  uiState.workspaceCryptoMigrationCounts = null;
+  renderWorkspaceCryptoModal();
+
+  const migrationPrompted = await maybePromptWorkspaceMigration();
+  if (migrationPrompted) return;
+
+  await refreshPatients();
+  await loadWorkspaceMeta();
+  await maybePromptGuestImport();
+}
+
+async function runWorkspaceMigrationNow() {
+  ensureWorkspaceUnlocked();
+  uiState.workspaceCryptoPromptVisible = true;
+  renderWorkspaceCryptoModal();
+
+  try {
+    await workspaceCryptoService.migratePlaintextRecords({
+      onProgress: () => {
+        renderWorkspaceCryptoModal();
+      }
+    });
+    uiState.workspaceCryptoPromptVisible = false;
+    uiState.workspaceCryptoPromptMode = "unlock";
+    uiState.workspaceCryptoMigrationCounts = null;
+    renderWorkspaceCryptoModal();
+    await refreshPatients();
+    await maybePromptGuestImport();
+    setStatus("Workspace data migration complete.");
+  } catch (error) {
+    setStatus(error?.message || "Workspace migration failed.");
+    renderWorkspaceCryptoModal();
+  }
 }
 
 async function runManualConnectionCheck({ closeGateOnReady = false } = {}) {
@@ -1508,6 +1793,7 @@ async function handleClick(event) {
   }
 
   if (target.id === "exportAssessPatientBtn") {
+    ensureWorkspaceUnlocked();
     const patient = getAssessPatient();
     if (!patient) {
       setStatus("Select a patient first.");
@@ -1521,6 +1807,7 @@ async function handleClick(event) {
   }
 
   if (target.id === "exportAllCsvBtn") {
+    ensureWorkspaceUnlocked();
     const [patients, assessments] = await Promise.all([
       dataAccess.listPatients(""),
       dataAccess.getAllAssessments()
@@ -1532,6 +1819,7 @@ async function handleClick(event) {
   }
 
   if (target.id === "exportJsonBtn") {
+    ensureWorkspaceUnlocked();
     const [patients, assessments] = await Promise.all([
       dataAccess.listPatients(""),
       dataAccess.getAllAssessments()
@@ -1548,6 +1836,45 @@ async function handleClick(event) {
     return;
   }
 
+  if (target.id === "exportSupportPackageBtn") {
+    ensureWorkspaceUnlocked();
+    const scope = uiState.supportExportScope || "selected";
+    const redact = Boolean(uiState.supportExportRedactExternalIds);
+
+    let patients = [];
+    let assessments = [];
+
+    if (scope === "selected") {
+      const selected = patientStore.getState().selectedPatient;
+      if (!selected) {
+        setStatus("Open a patient first or switch support package scope to all patients.");
+        return;
+      }
+      patients = [selected];
+      assessments = await dataAccess.listAssessmentsByPatient(selected.id);
+    } else {
+      [patients, assessments] = await Promise.all([
+        dataAccess.listPatients(""),
+        dataAccess.getAllAssessments()
+      ]);
+    }
+
+    const pkg = buildSupportPackage({
+      patients,
+      assessments,
+      scope,
+      redactExternalIds: redact
+    });
+
+    downloadText(
+      `sepsis-flow-support-package-${scope}.json`,
+      JSON.stringify(pkg, null, 2),
+      "application/json;charset=utf-8;"
+    );
+    setStatus("Support package exported.");
+    return;
+  }
+
   if (target.id === "goNewPatientBtn") {
     uiState.currentPage = "new-patient";
     renderNav();
@@ -1555,6 +1882,7 @@ async function handleClick(event) {
   }
 
   if (target.matches("[data-action='select-patient']")) {
+    ensureWorkspaceUnlocked();
     const patientId = target.dataset.patientId;
     const selected = patientStore.getState().patients.find((row) => row.id === patientId) || null;
     patientStore.patch({ selectedPatientId: patientId, selectedPatient: selected });
@@ -1564,6 +1892,7 @@ async function handleClick(event) {
   }
 
   if (target.matches("[data-action='open-in-assess']")) {
+    ensureWorkspaceUnlocked();
     const patientId = target.dataset.patientId;
     uiState.currentPage = "assess";
     renderNav();
@@ -1578,6 +1907,7 @@ async function handleClick(event) {
   }
 
   if (target.matches("[data-action='delete-patient']")) {
+    ensureWorkspaceUnlocked();
     const patientId = target.dataset.patientId;
     if (!patientId) return;
     if (!window.confirm("Delete this patient and all timeline assessments?")) return;
@@ -1599,6 +1929,7 @@ async function handleClick(event) {
   }
 
   if (target.matches("[data-action='open-assessment']")) {
+    ensureWorkspaceUnlocked();
     const id = target.dataset.assessmentId;
     const row = patientStore.getState().selectedPatientAssessments.find((item) => item.id === id);
     uiState.selectedAssessmentId = id;
@@ -1628,6 +1959,11 @@ async function handleClick(event) {
   }
 
   if (target.id === "signOutBtn") {
+    workspaceCryptoService.lockWorkspace();
+    uiState.workspaceCryptoPromptVisible = false;
+    uiState.workspaceCryptoPromptMode = "unlock";
+    uiState.workspaceCryptoMigrationCounts = null;
+    renderWorkspaceCryptoModal();
     await authService.signOut();
     uiState.assessPatientId = null;
     renderSettingsState();
@@ -1639,6 +1975,11 @@ async function handleClick(event) {
   }
 
   if (target.id === "guestModeBtn") {
+    workspaceCryptoService.lockWorkspace();
+    uiState.workspaceCryptoPromptVisible = false;
+    uiState.workspaceCryptoPromptMode = "unlock";
+    uiState.workspaceCryptoMigrationCounts = null;
+    renderWorkspaceCryptoModal();
     setGuestMode();
     uiState.assessPatientId = null;
     renderSettingsState();
@@ -1686,8 +2027,50 @@ async function handleClick(event) {
   }
 
   if (target.id === "refreshWorkspaceBtn") {
+    ensureWorkspaceUnlocked();
     await loadWorkspaceMeta();
     setStatus("Workspace metadata refreshed.");
+    return;
+  }
+
+  if (target.id === "runWorkspaceMigrationBtn") {
+    await runWorkspaceMigrationNow();
+    return;
+  }
+
+  if (target.id === "signOutForMigrationBtn") {
+    await authService.signOut();
+    workspaceCryptoService.lockWorkspace();
+    uiState.workspaceCryptoPromptVisible = false;
+    renderWorkspaceCryptoModal();
+    await refreshPatients();
+    setStatus("Signed out.");
+    return;
+  }
+
+  if (target.id === "resetEncryptedWorkspaceBtn") {
+    const isOwner = workspaceStore.getState().membershipRole === "owner";
+    if (!isOwner) {
+      setStatus("Only workspace owners can reset encrypted workspace data.");
+      return;
+    }
+    const confirmed = window.confirm("Reset encrypted workspace data? This removes all workspace patients and assessments.");
+    if (!confirmed) return;
+    const typed = window.prompt("Type RESET to confirm.");
+    if (typed !== "RESET") return;
+
+    try {
+      await workspaceCryptoService.resetWorkspaceEncryptedData();
+      uiState.workspaceCryptoPromptVisible = true;
+      uiState.workspaceCryptoPromptMode = "setup";
+      uiState.workspaceCryptoMigrationCounts = null;
+      selectAssessPatient(null);
+      await refreshPatients();
+      renderWorkspaceCryptoModal();
+      setStatus("Encrypted workspace data was reset.");
+    } catch (error) {
+      setStatus(error?.message || "Workspace reset failed.");
+    }
     return;
   }
 }
@@ -1698,6 +2081,7 @@ async function handleSubmit(event) {
   event.preventDefault();
 
   if (form.id === "createPatientForm") {
+    ensureWorkspaceUnlocked();
     const formData = new FormData(form);
     const alias = String(formData.get("alias") || "");
     const externalId = String(formData.get("externalId") || "");
@@ -1722,6 +2106,7 @@ async function handleSubmit(event) {
   }
 
   if (form.id === "editPatientForm") {
+    ensureWorkspaceUnlocked();
     const formData = new FormData(form);
     const patientId = String(formData.get("patientId") || "").trim();
     const alias = String(formData.get("alias") || "").trim();
@@ -1760,8 +2145,11 @@ async function handleSubmit(event) {
     try {
       await authService.signIn(email, password);
       await loadWorkspaceMeta();
-      await refreshPatients();
-      await maybePromptGuestImport();
+      await ensureWorkspaceCryptoPromptState();
+      if (isWorkspaceUnlocked() || !requiresWorkspaceUnlock()) {
+        await refreshPatients();
+        await maybePromptGuestImport();
+      }
       renderSettingsState();
       renderProfileState();
       setStatus("Signed in successfully.");
@@ -1805,6 +2193,43 @@ async function handleSubmit(event) {
     return;
   }
 
+  if (form.id === "workspaceCryptoSetupForm") {
+    const formData = new FormData(form);
+    const passphrase = String(formData.get("passphrase") || "");
+    const confirm = String(formData.get("passphraseConfirm") || "");
+    if (passphrase !== confirm) {
+      setStatus("Passphrase confirmation does not match.");
+      return;
+    }
+
+    try {
+      await workspaceCryptoService.initializeWorkspacePassphrase(passphrase);
+      form.reset();
+      setStatus("Workspace encryption initialized.");
+      await completeWorkspaceUnlockFlow();
+    } catch (error) {
+      setStatus(error?.message || "Could not initialize workspace encryption.");
+      renderWorkspaceCryptoModal();
+    }
+    return;
+  }
+
+  if (form.id === "workspaceCryptoUnlockForm") {
+    const formData = new FormData(form);
+    const passphrase = String(formData.get("passphrase") || "");
+
+    try {
+      await workspaceCryptoService.unlockWorkspace(passphrase);
+      form.reset();
+      setStatus("Workspace unlocked.");
+      await completeWorkspaceUnlockFlow();
+    } catch (error) {
+      setStatus(error?.message || "Workspace unlock failed.");
+      renderWorkspaceCryptoModal();
+    }
+    return;
+  }
+
   if (form.id === "feedbackEmailForm") {
     const formData = new FormData(form);
     const subject = String(formData.get("subject") || "Sepsis Flow feedback").trim() || "Sepsis Flow feedback";
@@ -1816,6 +2241,7 @@ async function handleSubmit(event) {
   }
 
   if (form.id === "profileForm") {
+    ensureWorkspaceUnlocked();
     const formData = new FormData(form);
     const displayName = String(formData.get("displayName") || "").trim();
 
@@ -1830,6 +2256,7 @@ async function handleSubmit(event) {
   }
 
   if (form.id === "workspaceRenameForm") {
+    ensureWorkspaceUnlocked();
     const formData = new FormData(form);
     const workspaceName = String(formData.get("workspaceName") || "").trim();
 
@@ -1845,6 +2272,7 @@ async function handleSubmit(event) {
   }
 
   if (form.id === "profileInviteForm") {
+    ensureWorkspaceUnlocked();
     const formData = new FormData(form);
     const email = String(formData.get("email") || "").trim();
 
@@ -1875,6 +2303,16 @@ function handleInput(event) {
     return;
   }
 
+  if (target.id === "supportExportRedactExternalIds") {
+    uiState.supportExportRedactExternalIds = Boolean(target.checked);
+    return;
+  }
+
+  if (target.id === "supportExportScopeSelect") {
+    uiState.supportExportScope = String(target.value || "selected");
+    return;
+  }
+
   const sourceKey = target.getAttribute("name") || target.getAttribute("id") || "";
   if (!WFAZ_AUTOFILL_SOURCE_KEYS.has(sourceKey)) return;
 
@@ -1897,10 +2335,14 @@ function handleInput(event) {
 function bindEvents() {
   const root = byId("app");
   root.addEventListener("click", (event) => {
-    void handleClick(event);
+    void handleClick(event).catch((error) => {
+      setStatus(error?.message || "Action failed.");
+    });
   });
   root.addEventListener("submit", (event) => {
-    void handleSubmit(event);
+    void handleSubmit(event).catch((error) => {
+      setStatus(error?.message || "Submit failed.");
+    });
   });
   root.addEventListener("input", handleInput);
 }
@@ -1910,6 +2352,7 @@ function subscribeStores() {
     renderSettingsState();
     renderGlobalStatus();
     renderProfileState();
+    renderWorkspaceCryptoModal();
   });
 
   settingsStore.subscribe(() => {
@@ -1936,6 +2379,12 @@ function subscribeStores() {
     renderPatientsState();
     renderGlobalStatus();
   });
+
+  cryptoStore.subscribe(() => {
+    renderWorkspaceCryptoModal();
+    renderPatientsState();
+    renderAssessState();
+  });
 }
 
 async function init() {
@@ -1961,10 +2410,15 @@ async function init() {
     setStatus(error?.message || "Authentication initialization failed.");
   }
 
-  await refreshPatients();
   await loadWorkspaceMeta();
+  await ensureWorkspaceCryptoPromptState();
+  if (!requiresWorkspaceUnlock() || isWorkspaceUnlocked()) {
+    await refreshPatients();
+    await maybePromptGuestImport();
+  }
   setStatus("Manual API status check required.");
   renderConnectionGateModal();
+  renderWorkspaceCryptoModal();
 }
 
 void init();

@@ -5,6 +5,7 @@ Desktop-first static web app with:
 - Patient-centric navigation (`Patients`, `Assess`, `Settings`)
 - Guest mode (local IndexedDB persistence)
 - Optional authenticated workspace mode (Supabase auth + Postgres)
+- Client-side encrypted workspace data (passphrase required each sign-in)
 - Day 1 -> Day 2 sequential assessment flow
 - Day 2 carry-forward override editor
 - 48-hour deterministic summary from highest predicted treatment level
@@ -22,6 +23,7 @@ Desktop-first static web app with:
 - Email/password login via Supabase.
 - Email verification required.
 - Data stored in Supabase Postgres and isolated by workspace membership (RLS).
+- Workspace patient/assessment payloads are encrypted in-browser before upload.
 - One workspace per user in v1.
 
 ## Supabase setup

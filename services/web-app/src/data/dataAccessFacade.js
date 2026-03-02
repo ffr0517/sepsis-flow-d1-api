@@ -65,6 +65,30 @@ export function createDataAccessFacade({ getMode, guestRepository, workspaceRepo
     upsertAppSetting(key, value) {
       if (getMode() !== "authenticated") return Promise.resolve();
       return workspaceRepository.upsertAppSetting(key, value);
+    },
+    getAppSetting(key) {
+      if (getMode() !== "authenticated") return Promise.resolve(null);
+      return workspaceRepository.getAppSetting(key);
+    },
+    deleteAppSetting(key) {
+      if (getMode() !== "authenticated") return Promise.resolve();
+      return workspaceRepository.deleteAppSetting(key);
+    },
+    countUnencryptedRecords() {
+      if (getMode() !== "authenticated") return Promise.resolve({ patients: 0, assessments: 0 });
+      return workspaceRepository.countUnencryptedRecords();
+    },
+    listLegacyPlaintextPatients() {
+      if (getMode() !== "authenticated") return Promise.resolve([]);
+      return workspaceRepository.listLegacyPlaintextPatients();
+    },
+    listLegacyPlaintextAssessments() {
+      if (getMode() !== "authenticated") return Promise.resolve([]);
+      return workspaceRepository.listLegacyPlaintextAssessments();
+    },
+    resetWorkspaceEncryptedData() {
+      if (getMode() !== "authenticated") throw new Error("Sign in is required.");
+      return workspaceRepository.resetWorkspaceEncryptedData();
     }
   };
 }

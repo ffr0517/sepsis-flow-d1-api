@@ -1,4 +1,4 @@
-# Supabase Setup (Phase 1.5)
+# Supabase Setup (Phase 1.7)
 
 This folder contains the schema and edge functions for account auth + team workspaces.
 
@@ -7,6 +7,8 @@ This folder contains the schema and edge functions for account auth + team works
 Use the Supabase SQL editor or CLI to apply:
 
 - `migrations/20260301_phase15_auth_workspace.sql`
+- `migrations/20260301_phase16_patient_profile_and_workspace_updates.sql`
+- `migrations/20260302_phase17_workspace_encryption.sql`
 
 ## 2) Deploy edge functions
 

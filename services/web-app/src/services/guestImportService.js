@@ -30,7 +30,13 @@ export async function importGuestDataIntoWorkspace({
     try {
       const created = await createPatient({
         alias: patient.alias,
-        externalId: patient.externalId || ""
+        externalId: patient.externalId || "",
+        country: patient.country ?? null,
+        inpatientStatus: patient.inpatientStatus ?? null,
+        ageMonths: patient.ageMonths ?? null,
+        sex: patient.sex ?? null,
+        weightValue: patient.weightValue ?? null,
+        weightUnit: patient.weightUnit ?? null
       });
       patientIdMap.set(patient.id, created.id);
       importedPatients += 1;
